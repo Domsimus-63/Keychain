@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.example.accountswitcher.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "TitleScreenMixin",
+    "PauseScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

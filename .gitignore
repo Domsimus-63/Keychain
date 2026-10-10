@@ -1,16 +1,15 @@
-# Compiled class file
+.gradle/
+**/build/
+**/run/
+**/logs/
+releases/
+*.tmp
 *.class
-
-# Log file
 *.log
-
-# BlueJ files
 *.ctxt
-
-# Mobile Tools for Java (J2ME)
 .mtj.tmp/
-
-# Package Files #
+hs_err_pid*
+replay_pid*
 *.jar
 *.war
 *.nar
@@ -19,6 +18,7 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
-hs_err_pid*
-replay_pid*
+# Keep the build wrappers and published Keychain downloads in the repository.
+!**/gradle/wrapper/gradle-wrapper.jar
+!downloads/**/*.jar
+!downloads/*.zip

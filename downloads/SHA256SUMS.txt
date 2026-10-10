@@ -1,0 +1,6 @@
+104c23ba11b4c82d2af74bf83e778f01bc00d1128d9fbdd5d1a0180e3816ce94  keychain-3.0-source.zip
+ced62031552a0189e1fb4596f20aaeb638e60099da1e9fc94c2b51042a54d6b0  keychain-3.0-universal.jar
+0c2e3916f594893dc4675fde72fb78d75ba95350b9bc82292285c148c83a7910  versions/keychain-mc1.21.11-3.0.jar
+38d4ebb3509d47b771c3d6721df0d326ba80adb34de465e5c47581bf945d3ea3  versions/keychain-mc26.1-3.0.jar
+d41e4c79250ffe9ad6988b4fec78e40b2b286914463b9aa23fe902afbd5224ab  versions/keychain-mc26.2-3.0.jar
+e2bddef6c115d10f2ed298a4e7dd2a2c0a2328bec275986a28064e9cb0cdba54  versions/keychain-mc26.3-3.0.jar

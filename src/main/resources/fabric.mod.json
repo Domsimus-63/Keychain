@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "accountswitcher",
+  "version": "${version}",
+
+  "name": "Keychain",
+  "description": "In-game Microsoft and offline account switcher with search, favorites, skin previews, and encrypted account storage.",
+  "authors": ["Domsimus"],
+  "contact": {
+    "homepage": "https://modrinth.com/mod/keychain"
+  },
+  "license": "MIT",
+  "icon": "assets/accountswitcher/icon.png",
+
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.example.accountswitcher.AccountSwitcherMod"]
+  },
+  "mixins": [
+    { "config": "accountswitcher.mixins.json", "environment": "client" }
+  ],
+  "accessWidener": "accountswitcher.accesswidener",
+
+  "depends": {
+    "fabricloader": "${loader_range}",
+    "minecraft":    "${minecraft_range}",
+    "java":         ">=25",
+    "fabric-api":   "*"
+  }
+}

@@ -1,0 +1,53 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.17.19'
+}
+
+group = 'com.example.accountswitcher'
+version = '3.0'
+def minecraftVersion = (findProperty('minecraft_version') ?: '26.1').toString()
+def defaultApiVersions = ['26.1': '0.145.1+26.1', '26.2': '0.161.0+26.2', '26.3': '0.161.0+26.3']
+def fabricApiVersion = (findProperty('fabric_api_version') ?: defaultApiVersions[minecraftVersion]).toString()
+def minecraftRange = ">=${minecraftVersion} <${minecraftVersion.substring(0, minecraftVersion.lastIndexOf('.') + 1)}${minecraftVersion.substring(minecraftVersion.lastIndexOf('.') + 1).toInteger() + 1}"
+def loaderVersion = minecraftVersion == '26.3' ? '0.19.5' : '0.19.3'
+def loaderRange = minecraftVersion == '26.3' ? '>=0.19.5' : '>=0.19.2'
+
+base {
+    archivesName = "keychain-mc${minecraftVersion}"
+}
+
+repositories {
+    maven { url = 'https://maven.fabricmc.net/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraftVersion}"
+    implementation "net.fabricmc:fabric-loader:${loaderVersion}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+loom {
+    accessWidenerPath = file('src/main/resources/accountswitcher.accesswidener')
+}
+
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'minecraft_range', minecraftRange
+    inputs.property 'loader_range', loaderRange
+    filesMatching('fabric.mod.json') {
+        expand version: project.version, minecraft_range: minecraftRange, loader_range: loaderRange
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}
+
+java {
+    withSourcesJar()
+}
+
+test {
+    useJUnitPlatform()
+}
