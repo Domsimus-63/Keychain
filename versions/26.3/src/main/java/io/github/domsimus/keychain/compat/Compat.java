@@ -29,7 +29,14 @@ import org.slf4j.LoggerFactory;
 public final class Compat {
     private static final Logger LOGGER = LoggerFactory.getLogger("Keychain");
 
+    /** Minecraft's own, already connected services client (see ServicesMixin). */
+    private static volatile MinecraftServicesDiscoveryService gameServices;
+
     private Compat() {}
+
+    public static void rememberDiscovery(MinecraftServicesDiscoveryService services) {
+        if (gameServices == null) gameServices = services;
+    }
 
     public static void setScreen(Screen screen) {
         Minecraft.getInstance().gui.setScreen(screen);
@@ -59,9 +66,10 @@ public final class Compat {
         return Screens.getWidgets(screen);
     }
 
-    /** Ctrl (Cmd on macOS) plus {@code key}, using this version's key codes. */
-    public static boolean isShortcut(KeyEvent event, int key) {
-        return event.hasControlDownWithQuirk() && event.shortcutKey() == key;
+    /** Ctrl (Cmd on macOS) plus a letter key, independent of keyboard layout handling per version. */
+    public static boolean isShortcut(KeyEvent event, char letter) {
+        // 26.3 (SDL) reports shortcuts by the typed letter, lowercase, like vanilla isSelectAll().
+        return event.hasControlDownWithQuirk() && event.shortcutKey() == Character.toLowerCase(letter);
     }
 
     public static boolean isKey(KeyEvent event, int key) {
@@ -77,7 +85,8 @@ public final class Compat {
      */
     public static void applySession(Minecraft minecraft, User user, boolean online) {
         // Build everything first and assign at the end, so a failure leaves the old session intact.
-        MinecraftServicesDiscoveryService authentication = online ? MinecraftServicesDiscoveryService.create(minecraft.getProxy(), true) : MinecraftServicesDiscoveryService.createOffline(minecraft.getProxy());
+        MinecraftServicesDiscoveryService authentication = !online ? MinecraftServicesDiscoveryService.createOffline(minecraft.getProxy())
+            : gameServices != null ? gameServices : MinecraftServicesDiscoveryService.create(minecraft.getProxy(), true);
         UserApiService api = UserApiService.OFFLINE;
         if (online) {
             try {

@@ -1,5 +1,6 @@
 package io.github.domsimus.keychain.ui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import io.github.domsimus.keychain.Keychain;
 import io.github.domsimus.keychain.compat.Gfx;
 import io.github.domsimus.keychain.compat.KeychainList;
@@ -137,7 +138,8 @@ final class AccountList extends KeychainList<AccountList.Row> {
 
         @Override
         public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-            if (event.button() != 0) return false;
+            // The left button is 0 before 26.3 and 1 from 26.3 (SDL); the constant is right for each build.
+            if (event.button() != InputConstants.MOUSE_BUTTON_LEFT) return false;
             double mx = event.x(), my = event.y();
             setSelected(this);
             if (inside(mx, my, starX - 2, starY - 2, 15, 15)) {

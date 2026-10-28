@@ -17,6 +17,7 @@
     "client": ["io.github.domsimus.keychain.Keychain"],
     "modmenu": ["io.github.domsimus.keychain.ModMenuIntegration"]
   },
+  "mixins": ["keychain.mixins.json"],
   "accessWidener": "keychain.accesswidener",
   "depends": {
     "fabricloader": ">=${loader_min}",

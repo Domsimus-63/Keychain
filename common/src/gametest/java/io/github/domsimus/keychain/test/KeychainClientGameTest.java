@@ -50,18 +50,30 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
         context.waitTicks(5);
         context.takeScreenshot("keychain-03-accounts");
 
-        // Switching from the title screen applies immediately and rebuilds the session services.
+        // Switching the way a player does it: double-click the account row with the real mouse.
         AtomicReference<Object> keysBefore = new AtomicReference<>();
+        context.runOnClient(minecraft -> keysBefore.set(minecraft.getProfileKeyPairManager()));
+        double[] alexRow = rowPoint(context, "Alex_Test", false);
+        context.getInput().setCursorPos(alexRow[0], alexRow[1]);
+        context.waitTick();
+        context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+        context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+        context.waitTicks(3);
         context.runOnClient(minecraft -> {
-            keysBefore.set(minecraft.getProfileKeyPairManager());
             Account alex = Keychain.get().vault().find(Account.offlineUuid("Alex_Test")).orElseThrow();
-            SessionManager.Outcome outcome = Keychain.get().sessions().switchTo(alex).join();
-            check(outcome == SessionManager.Outcome.SWITCHED, "switch outcome was " + outcome);
-            check(minecraft.getUser().getName().equals("Alex_Test"), "user is " + minecraft.getUser().getName());
+            check(minecraft.getUser().getName().equals("Alex_Test"), "double-click switched, user is " + minecraft.getUser().getName());
             check(minecraft.getUser().getProfileId().equals(Account.offlineUuid("Alex_Test")), "offline UUID applied");
             check(minecraft.getProfileKeyPairManager() != keysBefore.get(), "chat keys were rebuilt");
             check(Keychain.get().vault().data().lastActive().equals(alex.id()), "last active saved");
         });
+
+        // Clicking the star on a row favorites it.
+        double[] star = rowPoint(context, "Alex_Test", true);
+        context.getInput().setCursorPos(star[0], star[1]);
+        context.waitTick();
+        context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+        context.waitTicks(3);
+        check(context.computeOnClient(minecraft -> Keychain.get().vault().find(Account.offlineUuid("Alex_Test")).orElseThrow().favorite()), "star click favorites");
         context.waitTicks(5);
         context.takeScreenshot("keychain-04-switched");
 
@@ -94,6 +106,17 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
             Compat.applySession(minecraft, new User("OnlinePath", UUID.randomUUID(), "fake-online-token", Optional.empty(), Optional.empty()), true);
             check(minecraft.getUser().getName().equals("OnlinePath"), "online session applied");
             check(minecraft.getUser().getAccessToken().equals("fake-online-token"), "online token applied");
+            // The services client must be connected right away: Minecraft services should answer and
+            // reject the fake token, not report themselves unavailable (the 26.3 bug in 4.0.0).
+            String answer;
+            try {
+                minecraft.userApiService.fetchProperties();
+                answer = "accepted";
+            } catch (Exception rejected) {
+                answer = String.valueOf(rejected.getMessage());
+            }
+            Keychain.LOGGER.info("Keychain test: services answered the fake token with: {}", answer);
+            check(!answer.toLowerCase(java.util.Locale.ROOT).contains("unavailable"), "services reachable after switching, got: " + answer);
             Compat.applySession(minecraft, before, false);
             check(minecraft.getUser().getName().equals("Alex_Test"), "restored");
         });
@@ -101,11 +124,12 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
         context.runOnClient(minecraft -> check(java.util.Arrays.stream(minecraft.options.keyMappings)
             .anyMatch(key -> key.getName().equals("key.keychain.open")), "Open Keychain key registered"));
 
-        // Typing in search filters the list. (The test harness sends keys without modifier flags, so
-        // Ctrl+F itself cannot be simulated here; focus the search box directly.)
-        context.runOnClient(minecraft -> io.github.domsimus.keychain.compat.Compat.currentScreen().children().stream()
-            .filter(child -> child instanceof net.minecraft.client.gui.components.EditBox).findFirst()
-            .ifPresent(io.github.domsimus.keychain.compat.Compat.currentScreen()::setFocused));
+        // Ctrl+F focuses search. The harness sends keys without modifier flags, so the event is built
+        // here: key position for older versions, typed letter (keycode) for 26.3, plus the Ctrl flag.
+        context.runOnClient(minecraft -> Compat.currentScreen().keyPressed(new net.minecraft.client.input.KeyEvent(
+            InputConstants.KEY_F, 'f', net.minecraft.client.input.InputQuirks.EDIT_SHORTCUT_KEY_MODIFIER)));
+        check(context.computeOnClient(minecraft -> Compat.currentScreen().getFocused() instanceof net.minecraft.client.gui.components.EditBox),
+            "Ctrl+F focuses search");
         context.getInput().typeChars("build");
         context.waitTicks(3);
         context.takeScreenshot("keychain-05-search");
@@ -196,6 +220,27 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
             check(vault.find(Account.offlineUuid("Builder42")).orElseThrow().favorite(), "favorite saved");
         });
         Keychain.LOGGER.info("Keychain client game test passed");
+    }
+
+    /**
+     * Window-pixel position of an account row (its face, or its star) in the open Keychain screen,
+     * for clicking it with the test mouse.
+     */
+    private static double[] rowPoint(ClientGameTestContext context, String name, boolean star) {
+        return context.computeOnClient(minecraft -> {
+            net.minecraft.client.gui.screens.Screen screen = Compat.currentScreen();
+            for (Object child : screen.children()) {
+                if (!(child instanceof net.minecraft.client.gui.components.ObjectSelectionList<?> list)) continue;
+                for (Object item : list.children()) {
+                    net.minecraft.client.gui.components.ObjectSelectionList.Entry<?> row = (net.minecraft.client.gui.components.ObjectSelectionList.Entry<?>) item;
+                    if (!row.getNarration().getString().startsWith(name + ",")) continue;
+                    double x = star ? row.getContentRight() - 9 : row.getContentX() + 40;
+                    double scale = (double) minecraft.getWindow().getWidth() / minecraft.getWindow().getGuiScaledWidth();
+                    return new double[] {x * scale, row.getContentYMiddle() * scale};
+                }
+            }
+            throw new AssertionError("Keychain game test failed: no row for " + name);
+        });
     }
 
     private static void check(boolean condition, String what) {

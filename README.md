@@ -59,11 +59,11 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
 
 | Minecraft | Jar | Java |
 | --- | --- | --- |
-| 1.21.11 | `keychain-4.0.0+mc1.21.11.jar` | 21+ |
-| 26.1, 26.1.1, 26.1.2 | `keychain-4.0.0+mc26.1.jar` | 25+ |
-| 26.2 | `keychain-4.0.0+mc26.2.jar` | 25+ |
-| 26.3 | `keychain-4.0.0+mc26.3.jar` | 25+ |
-| any of the above | `keychain-4.0.0-universal.jar` | |
+| 1.21.11 | `keychain-4.0.1+mc1.21.11.jar` | 21+ |
+| 26.1, 26.1.1, 26.1.2 | `keychain-4.0.1+mc26.1.jar` | 25+ |
+| 26.2 | `keychain-4.0.1+mc26.2.jar` | 25+ |
+| 26.3 | `keychain-4.0.1+mc26.3.jar` | 25+ |
+| any of the above | `keychain-4.0.1-universal.jar` | |
 
 ## Where your data lives
 

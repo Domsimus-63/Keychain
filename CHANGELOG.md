@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.0.1
+
+### Fixed
+- **Minecraft 26.3: clicking accounts did nothing.** 26.3 numbers the left mouse button differently, so
+  clicks on account rows were ignored: you could not select, double-click to switch, use the hover
+  *Use* button or click the star.
+- **Minecraft 26.3: Ctrl+F (search) and Ctrl+Z (undo) did nothing**, for the same kind of reason.
+- Switching to a Microsoft account now reuses the game's own, already connected Minecraft services
+  client on 26.3 instead of starting a new one, so services are never briefly unavailable after a switch.
+
+### Tests
+- The in-game test now clicks account rows and the star with the real mouse and presses Ctrl+F, and
+  checks that Minecraft services answer right after an online switch. The click test fails on 4.0.0.
+
 ## 4.0.0
 
 A complete rewrite. Your accounts from Keychain 3.x and older are imported automatically.

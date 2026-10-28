@@ -357,11 +357,11 @@ public final class AccountsScreen extends KeychainScreen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (Compat.isShortcut(event, InputConstants.KEY_F)) {
+        if (Compat.isShortcut(event, 'f')) {
             setFocused(search);
             return true;
         }
-        if (Compat.isShortcut(event, InputConstants.KEY_Z) && !search.isFocused() && undoAvailable()) {
+        if (Compat.isShortcut(event, 'z') && !search.isFocused() && undoAvailable()) {
             undoRemove();
             return true;
         }

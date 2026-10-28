@@ -58,9 +58,10 @@ public final class Compat {
         return Screens.getWidgets(screen);
     }
 
-    /** Ctrl (Cmd on macOS) plus {@code key}, using this version's key codes. */
-    public static boolean isShortcut(KeyEvent event, int key) {
-        return event.hasControlDownWithQuirk() && event.key() == key;
+    /** Ctrl (Cmd on macOS) plus a letter key, independent of keyboard layout handling per version. */
+    public static boolean isShortcut(KeyEvent event, char letter) {
+        // GLFW key codes for letters are their uppercase ASCII values.
+        return event.hasControlDownWithQuirk() && event.key() == Character.toUpperCase(letter);
     }
 
     public static boolean isKey(KeyEvent event, int key) {

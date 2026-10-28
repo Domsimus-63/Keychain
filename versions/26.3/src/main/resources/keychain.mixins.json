@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "io.github.domsimus.keychain.compat.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["ServicesMixin"],
+  "injectors": { "defaultRequire": 1 }
+}
