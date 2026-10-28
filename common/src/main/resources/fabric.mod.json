@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "keychain",
+  "version": "${version}",
+  "name": "Keychain",
+  "description": "Switch between Microsoft and offline Minecraft accounts in-game. Encrypted storage, skin previews, favorites, search, and safe switching that keeps secure chat working.",
+  "authors": ["Domsimus"],
+  "contact": {
+    "homepage": "https://modrinth.com/mod/keychain",
+    "sources": "https://github.com/Domsimus-63/Keychain",
+    "issues": "https://github.com/Domsimus-63/Keychain/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/keychain/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["io.github.domsimus.keychain.Keychain"],
+    "modmenu": ["io.github.domsimus.keychain.ModMenuIntegration"]
+  },
+  "accessWidener": "keychain.accesswidener",
+  "depends": {
+    "fabricloader": ">=${loader_min}",
+    "minecraft": "${minecraft_range}",
+    "java": ">=${java_version}",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "modmenu": "*"
+  },
+  "breaks": {
+    "accountswitcher": "*"
+  }
+}

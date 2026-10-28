@@ -5,4 +5,13 @@ pluginManagement {
     }
 }
 
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.19.3' apply false
+    id 'net.fabricmc.fabric-loom-remap' version '1.19.3' apply false
+}
+
 rootProject.name = 'keychain'
+
+include 'core'
+// Every folder in versions/ is one Minecraft target. They share core/ and common/ sources.
+file('versions').eachDir { include "versions:${it.name}" }

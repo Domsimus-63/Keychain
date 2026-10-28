@@ -1,0 +1,18 @@
+// Plain-Java logic shared by every Minecraft target: accounts, vault, sign-in, queries.
+// Compiled here only so it can be unit-tested without a game; each target compiles the same sources.
+plugins { id 'java-library' }
+
+repositories { mavenCentral() }
+
+dependencies {
+    compileOnly 'com.google.code.gson:gson:2.13.1'
+    compileOnly 'org.slf4j:slf4j-api:2.0.17'
+    testImplementation 'com.google.code.gson:gson:2.13.1'
+    testImplementation 'org.slf4j:slf4j-simple:2.0.17'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
+tasks.withType(JavaCompile).configureEach { options.release = 21; options.encoding = 'UTF-8' }
+test { useJUnitPlatform() }

@@ -1,0 +1,91 @@
+// Applied by every versions/<mc>/build.gradle. 1.21.11 is obfuscated and uses the remapping Loom
+// plugin with Mojang mappings; 26.x ships unobfuscated, so the plain Loom plugin is enough.
+def obfuscated = pluginManager.hasPlugin('net.fabricmc.fabric-loom-remap')
+def javaVersion = property('java_version').toInteger()
+
+version = "${rootProject.mod_version}+mc${project.name}"
+group = 'io.github.domsimus.keychain'
+base { archivesName = 'keychain' }
+
+repositories {
+    maven { url = 'https://maven.fabricmc.net/' }
+    maven { url = 'https://maven.terraformersmc.com/releases/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${property('minecraft_version')}"
+    // Mod Menu is optional at runtime: only its API is needed to offer a config button.
+    def modMenu = "com.terraformersmc:modmenu:${property('modmenu_version')}"
+    if (obfuscated) {
+        mappings loom.officialMojangMappings()
+        modImplementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+        modImplementation "net.fabricmc.fabric-api:fabric-api:${property('fabric_api_version')}"
+        modCompileOnly(modMenu) { transitive = false }
+    } else {
+        implementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+        implementation "net.fabricmc.fabric-api:fabric-api:${property('fabric_api_version')}"
+        compileOnly(modMenu) { transitive = false }
+    }
+}
+
+sourceSets {
+    main {
+        java.srcDirs += [rootProject.file('core/src/main/java'), rootProject.file('common/src/main/java')]
+        resources.srcDirs += rootProject.file('common/src/main/resources')
+    }
+}
+
+loom {
+    accessWidenerPath = file('src/main/resources/keychain.accesswidener')
+    runs {
+        client { runDir = "../../run/${project.name}" }
+        remove server
+    }
+}
+
+processResources {
+    def props = [
+        version        : project.version,
+        minecraft_range: project.property('minecraft_range'),
+        loader_min     : project.property('loader_min'),
+        java_version   : javaVersion,
+    ]
+    inputs.properties props
+    filesMatching('fabric.mod.json') { expand props }
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = javaVersion
+    options.encoding = 'UTF-8'
+}
+
+jar {
+    from(rootProject.file('LICENSE')) { rename { 'LICENSE_keychain' } }
+}
+
+// In-game UI tests (opt-in, they launch the real game): ./gradlew :versions:<mc>:runClientGameTest -Pgametest
+if (rootProject.hasProperty('gametest')) {
+    fabricApi {
+        configureTests {
+            createSourceSet = true
+            modId = 'keychain-gametest'
+            enableGameTests = false
+            enableClientGameTests = true
+            eula = true
+            clearRunDirectory = true
+        }
+    }
+    sourceSets.gametest {
+        java.srcDirs += rootProject.file('common/src/gametest/java')
+        resources.srcDirs += rootProject.file('common/src/gametest/resources')
+    }
+    tasks.withType(JavaExec).configureEach {
+        // Keep the vault key and shared vault of test runs away from the real per-user folder.
+        systemProperty 'keychain.home', rootProject.file("run/keychain-home-${project.name}").absolutePath
+        systemProperty 'keychain.test.noBrowser', 'true'
+    }
+}

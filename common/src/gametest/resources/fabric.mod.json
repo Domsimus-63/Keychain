@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "keychain-gametest",
+  "version": "1.0.0",
+  "name": "Keychain game tests",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": ["io.github.domsimus.keychain.test.KeychainClientGameTest"]
+  },
+  "depends": { "keychain": "*" }
+}

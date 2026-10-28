@@ -1,53 +1,46 @@
-plugins {
-    id 'net.fabricmc.fabric-loom' version '1.17.19'
-}
+import groovy.json.JsonOutput
 
-group = 'com.example.accountswitcher'
-version = '3.0'
-def minecraftVersion = (findProperty('minecraft_version') ?: '26.1').toString()
-def defaultApiVersions = ['26.1': '0.145.1+26.1', '26.2': '0.161.0+26.2', '26.3': '0.161.0+26.3']
-def fabricApiVersion = (findProperty('fabric_api_version') ?: defaultApiVersions[minecraftVersion]).toString()
-def minecraftRange = ">=${minecraftVersion} <${minecraftVersion.substring(0, minecraftVersion.lastIndexOf('.') + 1)}${minecraftVersion.substring(minecraftVersion.lastIndexOf('.') + 1).toInteger() + 1}"
-def loaderVersion = minecraftVersion == '26.3' ? '0.19.5' : '0.19.3'
-def loaderRange = minecraftVersion == '26.3' ? '>=0.19.5' : '>=0.19.2'
+// Shared settings live in gradle/mod.gradle (Minecraft targets) and core/build.gradle (plain Java).
+def targets = subprojects.findAll { it.parent?.name == 'versions' }
 
-base {
-    archivesName = "keychain-mc${minecraftVersion}"
-}
-
-repositories {
-    maven { url = 'https://maven.fabricmc.net/' }
-}
-
-dependencies {
-    minecraft "com.mojang:minecraft:${minecraftVersion}"
-    implementation "net.fabricmc:fabric-loader:${loaderVersion}"
-    implementation "net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}"
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-loom {
-    accessWidenerPath = file('src/main/resources/accountswitcher.accesswidener')
-}
-
-processResources {
-    inputs.property 'version', project.version
-    inputs.property 'minecraft_range', minecraftRange
-    inputs.property 'loader_range', loaderRange
-    filesMatching('fabric.mod.json') {
-        expand version: project.version, minecraft_range: minecraftRange, loader_range: loaderRange
+// One jar for every supported version: Fabric Loader loads only the nested build whose
+// Minecraft range matches the running game.
+tasks.register('universalJar', Jar) {
+    group = 'build'
+    description = 'Bundles every Minecraft target into one jar.'
+    targets.each { dependsOn "${it.path}:build" }
+    archiveFileName = "keychain-${mod_version}-universal.jar"
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    def metadata = layout.buildDirectory.file('universal/fabric.mod.json')
+    doFirst {
+        def file = metadata.get().asFile
+        file.parentFile.mkdirs()
+        file.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+            schemaVersion: 1,
+            id           : 'keychain_universal',
+            version      : mod_version,
+            name         : 'Keychain (all versions)',
+            description  : 'Loads the Keychain build that matches your Minecraft version.',
+            authors      : ['Domsimus'],
+            contact      : [homepage: 'https://modrinth.com/mod/keychain'],
+            license      : 'MIT',
+            icon         : 'assets/keychain/icon.png',
+            environment  : 'client',
+            jars         : targets.collect { [file: "META-INF/jars/keychain-${mod_version}+mc${it.name}.jar"] },
+            depends      : [fabricloader: '>=0.17.3', minecraft: ['~1.21.11', '>=26.1 <26.4'], keychain: '*'],
+            custom       : ['modmenu': ['parent': 'keychain']],
+        ]))
+    }
+    from(metadata)
+    from(file('LICENSE'))
+    from(file('common/src/main/resources/assets/keychain/icon.png')) { into 'assets/keychain' }
+    targets.each { target ->
+        from(target.file("build/libs/keychain-${mod_version}+mc${target.name}.jar")) { into 'META-INF/jars' }
     }
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.release = 25
-}
-
-java {
-    withSourcesJar()
-}
-
-test {
-    useJUnitPlatform()
+tasks.register('buildAll') {
+    group = 'build'
+    description = 'Tests the core, builds every Minecraft target and the universal jar.'
+    dependsOn ':core:test', 'universalJar'
 }
