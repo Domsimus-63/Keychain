@@ -41,7 +41,6 @@ public final class OfflineAccountScreen extends KeychainScreen {
             value = text;
             updateButtons();
         });
-        setInitialFocus(name);
 
         int inner = panelWidth - 24;
         int third = (inner - 8) / 3;
@@ -53,6 +52,16 @@ public final class OfflineAccountScreen extends KeychainScreen {
         addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, b -> onClose())
             .bounds(panelX + 20 + 2 * third, y, inner - 2 * third - 8, 20).build());
         updateButtons();
+    }
+
+    /**
+     * The name box always starts focused. This has to be the screen's own initial-focus hook: focus
+     * set inside {@code init()} is moved on to the next widget (Cancel) by the default hook whenever
+     * the player last used the keyboard, and the typed name then went nowhere.
+     */
+    @Override
+    protected void setInitialFocus() {
+        setInitialFocus(name);
     }
 
     private String trimmed() {

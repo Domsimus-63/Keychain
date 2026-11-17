@@ -61,10 +61,19 @@ class VaultDataTest {
         Path file = dir.resolve("vault.key");
         ExecutorService pool = Executors.newFixedThreadPool(4);
         try {
-            Callable<SecretKey> load = () -> VaultKey.loadOrCreate(file);
-            List<Future<SecretKey>> keys = pool.invokeAll(List.of(load, load, load, load));
-            byte[] first = keys.getFirst().get().getEncoded();
-            for (Future<SecretKey> key : keys) assertArrayEquals(first, key.get().getEncoded());
+            // Many rounds: the race this guards against (reading a key that is still being written)
+            // only shows up some of the time.
+            for (int round = 0; round < 30; round++) {
+                Path roundFile = round == 0 ? file : dir.resolve("round" + round + "/vault.key");
+                Callable<SecretKey> load = () -> VaultKey.loadOrCreate(roundFile);
+                List<Future<SecretKey>> keys = pool.invokeAll(List.of(load, load, load, load));
+                byte[] first = keys.getFirst().get().getEncoded();
+                for (Future<SecretKey> key : keys) assertArrayEquals(first, key.get().getEncoded());
+                assertArrayEquals(first, VaultKey.loadOrCreate(roundFile).getEncoded(), "the key on disk is the one every game got");
+                try (java.util.stream.Stream<Path> left = Files.list(roundFile.getParent())) {
+                    assertEquals(1, left.count(), "no temporary key files left behind");
+                }
+            }
         } finally {
             pool.shutdownNow();
         }

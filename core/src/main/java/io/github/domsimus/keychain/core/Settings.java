@@ -5,8 +5,10 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,12 +46,26 @@ public final class Settings {
         return settings;
     }
 
+    /** Written to a temporary file and moved into place, so a crash never leaves half a settings file. */
     public void save() {
+        Path temporary = null;
         try {
             Files.createDirectories(file.getParent());
-            Files.writeString(file, GSON.toJson(this), StandardCharsets.UTF_8);
+            temporary = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
+            Files.writeString(temporary, GSON.toJson(this), StandardCharsets.UTF_8);
+            try {
+                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException failure) {
             LOGGER.warn("Keychain could not save {}", file, failure);
+        } finally {
+            try {
+                if (temporary != null) Files.deleteIfExists(temporary);
+            } catch (IOException ignored) {
+                // A leftover temporary file is harmless.
+            }
         }
     }
 

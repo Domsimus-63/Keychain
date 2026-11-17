@@ -125,7 +125,10 @@ public final class SettingsScreen extends KeychainScreen {
             status = Component.translatable("keychain.settings.client_id.invalid");
             color = Palette.BAD;
         }
-        gfx.wrapped(font, status, width / 2, clientIdY + 37, columnWidth, color, 2);
-        gfx.wrapped(font, Component.translatable("keychain.settings.storage", storageLocation()), width / 2, height - 42, width - 24, Palette.FAINT, 1);
+        int statusBottom = clientIdY + 37 + gfx.wrapped(font, status, width / 2, clientIdY + 37, columnWidth, color, 2);
+        // On very small windows there is no room left above the Done button: skip it rather than overlap.
+        if (height - 42 >= statusBottom + 2) {
+            gfx.wrapped(font, Component.translatable("keychain.settings.storage", storageLocation()), width / 2, height - 42, width - 24, Palette.FAINT, 1);
+        }
     }
 }

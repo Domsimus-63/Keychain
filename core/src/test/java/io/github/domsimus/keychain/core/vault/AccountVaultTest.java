@@ -127,6 +127,59 @@ class AccountVaultTest {
     }
 
     @Test
+    void picksUpChangesMadeWithinTheSameTimestamp() throws Exception {
+        AccountVault first = vault();
+        first.upsert(Account.offline("Base"));
+        AccountVault second = vault();
+        FileTime stamp = Files.getLastModifiedTime(first.file());
+        first.upsert(Account.offline("FromFirst"));
+        // File systems with coarse timestamps report the same time for both saves.
+        Files.setLastModifiedTime(first.file(), stamp);
+        assertTrue(second.upsert(Account.offline("FromSecond")));
+
+        assertEquals(List.of("Base", "FromFirst", "FromSecond"), vault().accounts().stream().map(Account::name).toList());
+    }
+
+    @Test
+    void resetLeavesAVaultAloneThatOpensAfterAll() throws Exception {
+        AccountVault vault = vault();
+        vault.upsert(Account.offline("Steve"));
+        String good = Files.readString(vault.file());
+        Files.writeString(vault.file(), "garbage");
+        vault.load();
+        assertEquals(AccountVault.State.UNREADABLE, vault.state());
+
+        // The problem was temporary: the real file is back before the user clicks "Start fresh".
+        Files.writeString(vault.file(), good);
+        assertNull(vault.resetUnreadable());
+        assertEquals(AccountVault.State.READY, vault.state());
+        assertEquals(1, vault.accounts().size());
+        assertEquals(good, Files.readString(vault.file()));
+    }
+
+    @Test
+    void recoversByItselfOnceTheFileIsReadableAgain() throws Exception {
+        AccountVault vault = vault();
+        vault.upsert(Account.offline("Steve"));
+        String good = Files.readString(vault.file());
+        Files.writeString(vault.file(), "garbage");
+        vault.load();
+        assertFalse(vault.upsert(Account.offline("Alex")));
+
+        Files.writeString(vault.file(), good);
+        assertTrue(vault.upsert(Account.offline("Alex")));
+        assertEquals(2, vault().accounts().size());
+    }
+
+    @Test
+    void usingAnAccountRemovedElsewhereDoesNotRememberIt() {
+        AccountVault vault = vault();
+        Account steve = Account.offline("Steve");
+        assertTrue(vault.markUsed(steve.id(), Instant.now()));
+        assertNull(vault.data().lastActive());
+    }
+
+    @Test
     void removingTheActiveAccountClearsIt() {
         AccountVault vault = vault();
         Account steve = Account.offline("Steve");

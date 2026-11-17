@@ -52,7 +52,15 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
 
         // Switching the way a player does it: double-click the account row with the real mouse.
         AtomicReference<Object> keysBefore = new AtomicReference<>();
-        context.runOnClient(minecraft -> keysBefore.set(minecraft.getProfileKeyPairManager()));
+        AtomicReference<Object> realmsBefore = new AtomicReference<>();
+        AtomicReference<Object> telemetryBefore = new AtomicReference<>();
+        String launcherName = context.computeOnClient(minecraft -> minecraft.getUser().getName());
+        context.runOnClient(minecraft -> {
+            keysBefore.set(minecraft.getProfileKeyPairManager());
+            realmsBefore.set(minecraft.realmsDataFetcher());
+            telemetryBefore.set(minecraft.getTelemetryManager());
+            check(Keychain.get().sessions().launcher().isEmpty(), "no way back is offered before the first switch");
+        });
         double[] alexRow = rowPoint(context, "Alex_Test", false);
         context.getInput().setCursorPos(alexRow[0], alexRow[1]);
         context.waitTick();
@@ -64,7 +72,36 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
             check(minecraft.getUser().getName().equals("Alex_Test"), "double-click switched, user is " + minecraft.getUser().getName());
             check(minecraft.getUser().getProfileId().equals(Account.offlineUuid("Alex_Test")), "offline UUID applied");
             check(minecraft.getProfileKeyPairManager() != keysBefore.get(), "chat keys were rebuilt");
+            check(minecraft.realmsDataFetcher() != realmsBefore.get(), "Realms data follows the new account");
+            check(minecraft.getTelemetryManager() != telemetryBefore.get(), "telemetry follows the new account");
             check(Keychain.get().vault().data().lastActive().equals(alex.id()), "last active saved");
+            check(Keychain.get().sessions().launcher().map(User::getName).orElse("").equals(launcherName), "the launcher's account is offered as a way back");
+        });
+
+        // The launcher's own account is not saved in Keychain; its button brings it back without a restart.
+        context.waitTicks(3);
+        context.takeScreenshot("keychain-03b-launcher-button");
+        // Its label contains the account name, so it is found by its text and clicked with the real mouse.
+        double[] launcherButton = context.computeOnClient(minecraft -> {
+            String label = net.minecraft.network.chat.Component.translatable("keychain.action.launcher", launcherName).getString();
+            for (Object child : Compat.currentScreen().children()) {
+                if (child instanceof net.minecraft.client.gui.components.AbstractWidget widget && widget.visible && widget.getMessage().getString().equals(label)) {
+                    double scale = (double) minecraft.getWindow().getWidth() / minecraft.getWindow().getGuiScaledWidth();
+                    return new double[] {(widget.getX() + widget.getWidth() / 2.0) * scale, (widget.getY() + widget.getHeight() / 2.0) * scale};
+                }
+            }
+            throw new AssertionError("Keychain game test failed: no button labelled " + label);
+        });
+        context.getInput().setCursorPos(launcherButton[0], launcherButton[1]);
+        context.waitTick();
+        context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+        context.waitTicks(3);
+        context.runOnClient(minecraft -> {
+            check(minecraft.getUser().getName().equals(launcherName), "back on the launcher's account, user is " + minecraft.getUser().getName());
+            check(Keychain.get().vault().data().lastActive() == null, "the launcher's account is what the next start uses");
+            check(Keychain.get().sessions().launcher().isEmpty(), "nothing to go back to while on the launcher's account");
+            Account alex = Keychain.get().vault().find(Account.offlineUuid("Alex_Test")).orElseThrow();
+            check(Keychain.get().sessions().switchTo(alex).join() == SessionManager.Outcome.SWITCHED, "switched to Alex_Test again");
         });
 
         // Clicking the star on a row favorites it.
@@ -133,9 +170,30 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
         context.getInput().typeChars("build");
         context.waitTicks(3);
         context.takeScreenshot("keychain-05-search");
+        check(selectedRow(context).startsWith("Builder42,"), "search highlights the first match, got: " + selectedRow(context));
         context.getInput().pressKey(InputConstants.KEY_ESCAPE);
         context.waitTicks(2);
         check(context.computeOnClient(minecraft -> io.github.domsimus.keychain.compat.Compat.currentScreen() instanceof AccountsScreen), "Escape clears search before closing");
+
+        // Arrow keys pick a row without leaving the search box, and a stray Enter in the empty box does nothing.
+        context.getInput().pressKey(InputConstants.KEY_DOWN);
+        context.waitTicks(2);
+        check(selectedRow(context).startsWith("SkyMiner,"), "Down moves the selection from the search box, got: " + selectedRow(context));
+        context.getInput().pressKey(InputConstants.KEY_UP);
+        context.waitTicks(2);
+        check(selectedRow(context).startsWith("Builder42,"), "Up moves it back, got: " + selectedRow(context));
+        context.getInput().pressKey(InputConstants.KEY_RETURN);
+        context.waitTicks(2);
+        context.runOnClient(minecraft -> check(minecraft.getUser().getName().equals("Alex_Test"), "Enter in an empty search box does not switch"));
+
+        // Typing a search and pressing Enter switches to the highlighted match.
+        context.getInput().typeChars("build");
+        context.waitTicks(2);
+        context.getInput().pressKey(InputConstants.KEY_RETURN);
+        context.waitTicks(3);
+        context.runOnClient(minecraft -> check(minecraft.getUser().getName().equals("Builder42"), "Enter in the search box uses the match, user is " + minecraft.getUser().getName()));
+        context.getInput().pressKey(InputConstants.KEY_ESCAPE);
+        context.waitTicks(2);
 
         context.clickScreenButton("keychain.action.add_offline");
         context.waitForScreen(OfflineAccountScreen.class);
@@ -170,8 +228,13 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
         context.waitForScreen(MicrosoftSignInScreen.class);
         context.waitTicks(20);
         context.takeScreenshot("keychain-08-microsoft");
-        context.clickScreenButton("keychain.signin.copy_link");
-        String link = context.computeOnClient(minecraft -> minecraft.keyboardHandler.getClipboard());
+        // Windows hands the clipboard to one program at a time; another one may hold it for a moment.
+        String link = "";
+        for (int attempt = 0; attempt < 5 && link.isEmpty(); attempt++) {
+            if (attempt > 0) context.waitTicks(10);
+            context.clickScreenButton("keychain.signin.copy_link");
+            link = context.computeOnClient(minecraft -> minecraft.keyboardHandler.getClipboard());
+        }
         check(link.startsWith("https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?"), "sign-in link: " + link);
         check(link.contains("redirect_uri=http%3A%2F%2Flocalhost%3A") && link.contains("code_challenge_method=S256"), "redirect and PKCE in link");
         context.clickScreenButton("gui.cancel");
@@ -240,6 +303,18 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
                 }
             }
             throw new AssertionError("Keychain game test failed: no row for " + name);
+        });
+    }
+
+    /** Narration of the selected account row ("Name, kind account, status. ..."), or "" if none is selected. */
+    private static String selectedRow(ClientGameTestContext context) {
+        return context.computeOnClient(minecraft -> {
+            for (Object child : Compat.currentScreen().children()) {
+                if (child instanceof net.minecraft.client.gui.components.ObjectSelectionList<?> list && list.getSelected() != null) {
+                    return list.getSelected().getNarration().getString();
+                }
+            }
+            return "";
         });
     }
 

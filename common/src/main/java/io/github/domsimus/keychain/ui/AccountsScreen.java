@@ -7,19 +7,24 @@ import io.github.domsimus.keychain.compat.Gfx;
 import io.github.domsimus.keychain.compat.KeychainScreen;
 import io.github.domsimus.keychain.core.account.Account;
 import io.github.domsimus.keychain.core.account.AccountQuery;
+import io.github.domsimus.keychain.core.auth.AuthException;
 import io.github.domsimus.keychain.core.vault.AccountVault;
+import io.github.domsimus.keychain.core.vault.VaultData;
 import io.github.domsimus.keychain.session.SessionManager;
 import io.github.domsimus.keychain.session.SkinCache;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.User;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.PlayerSkinWidget;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.network.chat.CommonComponents;
@@ -34,34 +39,38 @@ public final class AccountsScreen extends KeychainScreen {
     private final Screen parent;
     private final Keychain keychain = Keychain.get();
     private final Runnable vaultListener = () -> dirty = true;
+    /** The session when this screen opened, to tell on closing whether the account changed. */
+    private final User openedAs;
     private AccountQuery query = AccountQuery.DEFAULT;
     private UUID selectedId;
     private boolean dirty;
     private Account removed;
     private int removedIndex;
+    private boolean removedWasLastActive;
     private long removedAt;
 
     private AccountList list;
     private EditBox search;
-    private Button filterButton, sortButton, useButton, favoriteButton, removeButton, upButton, downButton, copyButton, resetButton, undoButton;
+    private Button filterButton, sortButton, useButton, favoriteButton, removeButton, upButton, downButton, copyButton, resetButton, undoButton, launcherButton;
     private PlayerSkinWidget preview;
     private int contentX, contentWidth, listWidth, listTop, listBottom, sideX, sideWidth;
 
     public AccountsScreen(Screen parent) {
         super(Component.translatable("keychain.title"));
         this.parent = parent;
-        UUID current = minecraftInstance().getUser().getProfileId();
+        this.openedAs = Minecraft.getInstance().getUser();
+        UUID current = openedAs.getProfileId();
         if (keychain.vault().find(current).isPresent()) selectedId = current;
-    }
-
-    private static net.minecraft.client.Minecraft minecraftInstance() {
-        return net.minecraft.client.Minecraft.getInstance();
     }
 
     @Override
     protected void init() {
         keychain.removeListener(vaultListener);
         keychain.addListener(vaultListener);
+        // Whatever kept the vault from opening may have been temporary: try again whenever the screen (re)opens.
+        if (!vaultReady()) keychain.vault().load();
+        // Keep the scroll position across resizes; a newly opened screen centers on the selection.
+        double scroll = list == null ? -1 : list.scrollAmount();
 
         contentWidth = Math.min(width - 16, 760);
         contentX = (width - contentWidth) / 2;
@@ -85,16 +94,19 @@ public final class AccountsScreen extends KeychainScreen {
         search.setResponder(value -> {
             query = query.withSearch(value);
             rebuildList();
+            list.ensureSelectedVisible();
         });
         filterButton = addRenderableWidget(Button.builder(filterLabel(), button -> {
             query = query.withFilter(query.filter().next());
             button.setMessage(filterLabel());
             rebuildList();
+            list.ensureSelectedVisible();
         }).bounds(contentX + searchWidth + GAP, toolbarY, cycleWidth, 20).tooltip(Tooltip.create(Component.translatable("keychain.filter.tooltip"))).build());
         sortButton = addRenderableWidget(Button.builder(sortLabel(), button -> {
             query = query.withSort(query.sort().next());
             button.setMessage(sortLabel());
             rebuildList();
+            list.ensureSelectedVisible();
         }).bounds(contentX + searchWidth + cycleWidth + 2 * GAP, toolbarY, cycleWidth, 20).tooltip(Tooltip.create(Component.translatable("keychain.sort.tooltip"))).build());
 
         list = new AccountList(this, minecraft, listWidth, listBottom - listTop, listTop);
@@ -167,7 +179,20 @@ public final class AccountsScreen extends KeychainScreen {
                 .bounds(contentX + listWidth / 2 - 80, listTop + (listBottom - listTop) / 2 + 22, 160, 20).build());
         }
 
+        // Added last so keyboard focus still starts at the search box. It sits on the left: the top
+        // right corner is where the "Now playing as" toast appears right after a switch.
+        launcherButton = null;
+        keychain.sessions().launcher().ifPresent(launcher -> {
+            Component label = Component.translatable("keychain.action.launcher", launcher.getName());
+            int buttonWidth = Math.min(font.width(label) + 12, contentWidth / 2);
+            launcherButton = addRenderableWidget(Button.builder(label, b -> useLauncher())
+                .bounds(contentX, 16, buttonWidth, 14)
+                .tooltip(Tooltip.create(Component.translatable("keychain.action.launcher.tooltip"))).build());
+        });
+
         rebuildList();
+        if (scroll >= 0) list.setScrollAmount(scroll);
+        else list.centerOnSelected();
     }
 
     // ---- state -------------------------------------------------------------------------------
@@ -200,7 +225,7 @@ public final class AccountsScreen extends KeychainScreen {
         boolean active = has && sessions.isActive(account);
         boolean queuedHere = has && sessions.isQueued(account);
         // While another account waits for the player to leave, the active one offers to cancel that.
-        boolean stay = active && sessions.queued().isPresent() && !queuedHere;
+        boolean stay = active && sessions.queuedName().isPresent() && !queuedHere;
         Account.Status status = has ? account.status(Instant.now()) : null;
         if (useButton != null) {
             useButton.active = has && !busy && !queuedHere && (stay || !(active && status == Account.Status.READY));
@@ -248,7 +273,7 @@ public final class AccountsScreen extends KeychainScreen {
             if (outcome == SessionManager.Outcome.NEEDS_SIGN_IN) {
                 // Only take over the screen if the player is still looking at Keychain.
                 if (Compat.currentScreen() == this) Compat.setScreen(new MicrosoftSignInScreen(this));
-                else SessionManager.toast(Component.translatable("keychain.toast.restore_failed", account.name()), Messages.reason(io.github.domsimus.keychain.core.auth.AuthException.Reason.SESSION_REVOKED));
+                else SessionManager.toast(Component.translatable("keychain.toast.restore_failed", account.name()), Messages.reason(AuthException.Reason.SESSION_REVOKED));
             }
             updateButtons();
         });
@@ -258,12 +283,17 @@ public final class AccountsScreen extends KeychainScreen {
     private void useSelected() {
         Account account = selected();
         if (account == null) return;
-        if (keychain.sessions().isActive(account) && keychain.sessions().queued().isPresent()) {
+        if (keychain.sessions().isActive(account) && keychain.sessions().queuedName().isPresent()) {
             keychain.sessions().cancelQueued();
             updateButtons();
             return;
         }
         use(account);
+    }
+
+    private void useLauncher() {
+        keychain.sessions().switchToLauncher();
+        updateButtons();
     }
 
     void toggleFavorite(Account account) {
@@ -280,7 +310,10 @@ public final class AccountsScreen extends KeychainScreen {
     private void moveSelected(int direction) {
         Account account = selected();
         Account other = account == null ? null : neighbor(account, direction);
-        if (other != null) keychain.vault().placeNextTo(account.id(), other.id(), direction > 0);
+        if (other != null && keychain.vault().placeNextTo(account.id(), other.id(), direction > 0)) {
+            rebuildList();
+            list.ensureSelectedVisible();
+        }
     }
 
     private void copySelectedUuid() {
@@ -296,37 +329,52 @@ public final class AccountsScreen extends KeychainScreen {
         Component message = Component.translatable(keychain.sessions().isActive(account)
             ? "keychain.remove.message_active" : "keychain.remove.message", account.name());
         Compat.setScreen(new ConfirmScreen(confirmed -> {
-            if (confirmed) {
-                int index = keychain.vault().accounts().indexOf(account);
-                if (keychain.vault().remove(account.id())) {
-                    removed = account;
-                    removedIndex = index;
-                    removedAt = System.currentTimeMillis();
-                } else {
-                    SessionManager.toast(Component.translatable("keychain.toast.save_failed"), null);
-                }
-            }
-            if (confirmed && keychain.sessions().queued().map(next -> next.id().equals(account.id())).orElse(false)) {
-                keychain.sessions().cancelQueued();
-            }
+            if (confirmed) remove(account.id());
             Compat.setScreen(this);
         }, Component.translatable("keychain.remove.title", account.name()), message));
+    }
+
+    private void remove(UUID id) {
+        // Remember the account as it is saved right now (its tokens may have been renewed since it
+        // was selected), so Undo puts back exactly what was removed.
+        VaultData before = keychain.vault().data();
+        Account current = before.find(id).orElse(null);
+        if (current == null) return;
+        if (!keychain.vault().remove(id)) {
+            SessionManager.toast(Component.translatable("keychain.toast.save_failed"), null);
+            return;
+        }
+        removed = current;
+        removedIndex = before.accounts().indexOf(current);
+        removedWasLastActive = id.equals(before.lastActive());
+        removedAt = System.currentTimeMillis();
+        if (keychain.sessions().isQueued(current)) keychain.sessions().cancelQueued();
     }
 
     private void undoRemove() {
         if (!undoAvailable()) return;
         Account account = removed;
+        int index = removedIndex;
+        boolean lastActive = removedWasLastActive;
         removed = null;
-        if (keychain.vault().update(vault -> vault.restore(account, removedIndex))) {
+        boolean restored = keychain.vault().update(vault -> {
+            VaultData back = vault.restore(account, index);
+            // "Remember account" pointed at it before it was removed: point it there again.
+            return lastActive && back.lastActive() == null ? back.withLastActive(account.id()) : back;
+        });
+        if (restored) {
             selectedId = account.id();
             rebuildList();
+            list.ensureSelectedVisible();
+        } else {
+            SessionManager.toast(Component.translatable("keychain.toast.save_failed"), null);
         }
     }
 
     private void resetVault() {
         try {
-            keychain.resetVault();
-            SessionManager.toast(Component.translatable("keychain.vault.reset.done"), null);
+            boolean moved = keychain.resetVault() != null;
+            SessionManager.toast(Component.translatable(moved ? "keychain.vault.reset.done" : "keychain.vault.recovered"), null);
         } catch (java.io.IOException failure) {
             Keychain.LOGGER.error("Keychain could not move the unreadable vault aside", failure);
             SessionManager.toast(Component.translatable("keychain.toast.save_failed"), null);
@@ -347,11 +395,11 @@ public final class AccountsScreen extends KeychainScreen {
     @Override
     public void tick() {
         super.tick();
-        if (dirty) {
-            boolean readable = vaultReady();
-            if ((resetButton != null) == readable) rebuildWidgets();
-            else rebuildList();
-        }
+        boolean readable = vaultReady();
+        boolean launcherOffered = keychain.sessions().launcher().isPresent();
+        // The reset button and the launcher button come and go with the state they belong to.
+        if ((resetButton != null) == readable || (launcherButton != null) != launcherOffered) rebuildWidgets();
+        else if (dirty) rebuildList();
         updateButtons();
     }
 
@@ -369,7 +417,15 @@ public final class AccountsScreen extends KeychainScreen {
             search.setValue("");
             return true;
         }
-        if (getFocused() == list || (getFocused() == search && list.children().size() == 1)) {
+        boolean searching = getFocused() == search;
+        if (searching && !event.hasAltDown() && (event.isUp() || event.isDown())) {
+            // Pick a result without leaving the search box.
+            list.moveSelection(event.isUp() ? -1 : 1);
+            return true;
+        }
+        // Enter in the search box uses the highlighted result, but only once something was typed
+        // (or there is just one account), so a stray Enter never switches accounts.
+        if (getFocused() == list || (searching && (!search.getValue().isBlank() || list.children().size() == 1))) {
             if (event.isConfirmation()) {
                 useSelected();
                 return true;
@@ -386,6 +442,19 @@ public final class AccountsScreen extends KeychainScreen {
         return super.keyPressed(event);
     }
 
+    /**
+     * Rebuilding (a resize, or a button appearing after a switch) recreates every widget and clears
+     * the focus. Put it back, so typing in the search box or stepping through the list carries on.
+     */
+    @Override
+    protected void rebuildWidgets() {
+        boolean searching = search != null && getFocused() == search;
+        boolean listing = list != null && getFocused() == list;
+        super.rebuildWidgets();
+        if (searching) setFocused(search);
+        else if (listing) setFocused(list);
+    }
+
     @Override
     public void removed() {
         keychain.removeListener(vaultListener);
@@ -394,7 +463,10 @@ public final class AccountsScreen extends KeychainScreen {
 
     @Override
     public void onClose() {
-        Compat.setScreen(parent);
+        // The title screen this was opened from still shows the old account's Realms invitations
+        // and news: after a switch, return to a fresh one.
+        boolean switched = minecraft.getUser() != openedAs;
+        Compat.setScreen(switched && parent instanceof TitleScreen ? new TitleScreen() : parent);
     }
 
     // ---- drawing -----------------------------------------------------------------------------
@@ -415,6 +487,9 @@ public final class AccountsScreen extends KeychainScreen {
         if (vault.state() == AccountVault.State.UNREADABLE) {
             gfx.centered(font, Component.translatable("keychain.vault.unreadable"), listCenter, listMiddle - 18, Palette.BAD);
             gfx.centered(font, Component.translatable("keychain.vault.unreadable.hint"), listCenter, listMiddle - 4, Palette.MUTED);
+            // The technical reason, so "made by a newer Keychain" is not mistaken for a lost key.
+            String problem = vault.problem();
+            if (problem != null) gfx.centered(font, Component.literal(font.plainSubstrByWidth(problem, listWidth - 16)), listCenter, listMiddle + 9, Palette.FAINT);
         } else if (vault.accounts().isEmpty()) {
             gfx.centered(font, Component.translatable("keychain.empty"), listCenter, listMiddle - 10, Palette.TEXT);
             gfx.centered(font, Component.translatable("keychain.empty.hint"), listCenter, listMiddle + 4, Palette.MUTED);
@@ -441,16 +516,22 @@ public final class AccountsScreen extends KeychainScreen {
 
     private void drawCurrentAccount(Gfx gfx) {
         SessionManager sessions = keychain.sessions();
-        Component line = sessions.queued()
-            .map(next -> (Component) Component.translatable("keychain.header.queued", minecraft.getUser().getName(), next.name()))
-            .orElseGet(() -> Component.translatable("keychain.header.playing_as", minecraft.getUser().getName()));
-        int color = sessions.queued().isPresent() ? Palette.WARN : Palette.MUTED;
-        int lineWidth = font.width(line);
-        int x = width / 2 - (lineWidth + 12) / 2;
-        Account current = keychain.vault().find(minecraft.getUser().getProfileId()).orElse(null);
-        if (current != null) gfx.face(SkinCache.get(current), x, 20, 8);
-        else gfx.face(SkinCache.forProfile(minecraft.getUser().getProfileId()), x, 20, 8);
-        gfx.text(font, line, x + 12, 20, color);
+        User user = minecraft.getUser();
+        String next = sessions.queuedName().orElse(null);
+        boolean waiting = next != null;
+        Component line = waiting ? Component.translatable("keychain.header.queued", user.getName(), next)
+            : Component.translatable("keychain.header.playing_as", user.getName());
+        // Centered, unless the launcher button on the left needs the room.
+        int left = launcherButton != null ? launcherButton.getX() + launcherButton.getWidth() + 6 : contentX;
+        int right = contentX + contentWidth;
+        int room = Math.max(20, right - left - 12);
+        // Too long for the row: say only who is next, which is what matters while a switch waits.
+        if (waiting && font.width(line) > room) line = Component.translatable("keychain.header.queued.short", next);
+        String text = font.plainSubstrByWidth(line.getString(), room);
+        int lineWidth = font.width(text) + 12;
+        int x = Math.max(left, Math.min(width / 2 - lineWidth / 2, right - lineWidth));
+        gfx.face(SkinCache.forProfile(user.getProfileId()), x, 20, 8);
+        gfx.text(font, text, x + 12, 20, waiting ? Palette.WARN : Palette.MUTED);
     }
 
     private void drawSidePanel(Gfx gfx) {

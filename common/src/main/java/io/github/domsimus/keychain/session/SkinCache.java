@@ -38,39 +38,46 @@ public final class SkinCache {
 
     public enum State { DEFAULT, LOADING, LOADED, UNAVAILABLE }
 
-    private record Entry(CompletableFuture<Optional<PlayerSkin>> skin, long startedAt) {}
+    /** @param last the skin shown before this (re)load started, kept on screen until the new one arrives */
+    private record Entry(CompletableFuture<Optional<PlayerSkin>> skin, long startedAt, Optional<PlayerSkin> last) {
+        Optional<PlayerSkin> current() {
+            Optional<PlayerSkin> loaded = skin.getNow(Optional.empty());
+            return loaded.isPresent() ? loaded : last;
+        }
+    }
 
     private SkinCache() {}
 
     public static PlayerSkin get(Account account) {
-        PlayerSkin fallback = DefaultPlayerSkin.get(account.id());
-        if (!account.isMicrosoft()) return fallback;
-        return entry(account.id()).skin().getNow(Optional.empty()).orElse(fallback);
+        return account.isMicrosoft() ? forProfile(account.id()) : DefaultPlayerSkin.get(account.id());
     }
 
     /** The skin for any profile UUID, such as the launcher's account when it is not saved in Keychain. */
     public static PlayerSkin forProfile(UUID id) {
-        return entry(id).skin().getNow(Optional.empty()).orElse(DefaultPlayerSkin.get(id));
+        // Only real (version 4) profiles exist at Mojang; offline UUIDs are derived from the name.
+        if (id.version() != 4) return DefaultPlayerSkin.get(id);
+        return entry(id).current().orElseGet(() -> DefaultPlayerSkin.get(id));
     }
 
     public static State state(Account account) {
         if (!account.isMicrosoft()) return State.DEFAULT;
-        CompletableFuture<Optional<PlayerSkin>> skin = entry(account.id()).skin();
-        if (!skin.isDone()) return State.LOADING;
-        return skin.getNow(Optional.empty()).isPresent() ? State.LOADED : State.UNAVAILABLE;
+        Entry entry = entry(account.id());
+        if (entry.current().isPresent()) return State.LOADED;
+        return entry.skin().isDone() ? State.UNAVAILABLE : State.LOADING;
     }
 
-    /** Drops the cached skin so the next lookup fetches it again (after signing in or switching). */
+    /** Fetches the skin again on the next lookup (after signing in or switching); the old one stays visible meanwhile. */
     public static void forget(UUID id) {
-        ENTRIES.remove(id);
+        ENTRIES.computeIfPresent(id, (key, previous) -> new Entry(previous.skin(), 0, previous.last()));
     }
 
     private static Entry entry(UUID id) {
         long now = System.currentTimeMillis();
         return ENTRIES.compute(id, (key, previous) -> {
-            if (previous == null) return new Entry(load(key), now);
-            boolean failed = previous.skin().isDone() && previous.skin().getNow(Optional.empty()).isEmpty();
-            return now - previous.startedAt() >= (failed ? RETRY_FAILED_MS : REFRESH_MS) ? new Entry(load(key), now) : previous;
+            if (previous == null) return new Entry(load(key), now, Optional.empty());
+            if (!previous.skin().isDone()) return previous;
+            boolean failed = previous.skin().getNow(Optional.empty()).isEmpty();
+            return now - previous.startedAt() >= (failed ? RETRY_FAILED_MS : REFRESH_MS) ? new Entry(load(key), now, previous.current()) : previous;
         });
     }
 

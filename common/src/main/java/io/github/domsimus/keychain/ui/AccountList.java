@@ -43,6 +43,27 @@ final class AccountList extends KeychainList<AccountList.Row> {
         return row == null ? null : row.account;
     }
 
+    /** Moves the selection one row up or down and keeps it in view (arrow keys from the search box). */
+    void moveSelection(int direction) {
+        List<Row> rows = children();
+        if (rows.isEmpty()) return;
+        int target = Math.max(0, Math.min(rows.size() - 1, rows.indexOf(getSelected()) + direction));
+        setSelected(rows.get(target));
+        ensureSelectedVisible();
+    }
+
+    /** Scrolls just far enough to show the selected row. */
+    void ensureSelectedVisible() {
+        Row row = getSelected();
+        if (row != null) scrollToEntry(row);
+    }
+
+    /** Scrolls the selected row to the middle of the list (when the screen opens). */
+    void centerOnSelected() {
+        Row row = getSelected();
+        if (row != null) centerScrollOn(row);
+    }
+
     @Override
     public void setSelected(Row row) {
         super.setSelected(row);
@@ -76,7 +97,7 @@ final class AccountList extends KeychainList<AccountList.Row> {
             SessionManager sessions = Keychain.get().sessions();
             boolean selected = getSelected() == this;
             boolean active = sessions.isActive(account);
-            boolean queued = sessions.queued().map(next -> next.id().equals(account.id())).orElse(false);
+            boolean queued = sessions.isQueued(account);
             boolean refreshing = sessions.preparing().map(account.id()::equals).orElse(false);
 
             if (selected) {

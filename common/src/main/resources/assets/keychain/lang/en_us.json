@@ -5,6 +5,7 @@
   "keychain.button.tooltip": "Keychain: switch accounts\nPlaying as %s",
   "keychain.header.playing_as": "Playing as %s",
   "keychain.header.queued": "Playing as %s · %s is next when you leave",
+  "keychain.header.queued.short": "%s is next when you leave",
   "keychain.count": "%s of %s accounts",
   "keychain.hint": "Double-click to switch · %s+F to search",
   "keychain.removed": "Removed %s.",
@@ -66,15 +67,18 @@
   "keychain.action.add_microsoft": "Add Microsoft",
   "keychain.action.add_offline": "Add Offline",
   "keychain.action.settings": "Settings",
+  "keychain.action.launcher": "Back to %s",
+  "keychain.action.launcher.tooltip": "Switch back to the account the game was started with. It is not saved in Keychain, so this is the only way back to it without restarting.",
 
   "keychain.remove.title": "Remove %s?",
   "keychain.remove.message": "The account is deleted from Keychain. You can add it again at any time.",
   "keychain.remove.message_active": "You stay signed in as this account until you switch or restart, but it is deleted from Keychain.",
 
   "keychain.vault.unreadable": "Your saved accounts could not be unlocked.",
-  "keychain.vault.unreadable.hint": "This happens after moving to another computer or Windows user. Nothing was deleted.",
+  "keychain.vault.unreadable.hint": "This usually happens after moving to another computer or Windows user. Nothing was deleted.",
   "keychain.vault.reset": "Start fresh (keep a backup)",
   "keychain.vault.reset.done": "Started a new vault. The old file was kept as a backup.",
+  "keychain.vault.recovered": "Your saved accounts opened after all. Nothing was changed.",
 
   "keychain.toast.switched": "Now playing as %s",
   "keychain.toast.queued.title": "Switching to %s",

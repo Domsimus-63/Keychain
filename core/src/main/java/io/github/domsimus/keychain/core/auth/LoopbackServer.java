@@ -34,7 +34,9 @@ final class LoopbackServer implements AutoCloseable {
     static LoopbackServer start() throws AuthException {
         HttpServer server;
         try {
-            server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+            // 127.0.0.1 explicitly: the JVM's "loopback address" is ::1 when IPv6 is preferred, and
+            // then browsers that resolve localhost to IPv4 would find nothing listening.
+            server = HttpServer.create(new InetSocketAddress(InetAddress.getByAddress("localhost", new byte[] {127, 0, 0, 1}), 0), 0);
         } catch (IOException failure) {
             throw new AuthException(AuthException.Reason.NETWORK, "Could not start the local sign-in page", failure);
         }

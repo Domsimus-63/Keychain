@@ -1,5 +1,53 @@
 # Changelog
 
+## 4.1.0
+
+### New
+- **Back to your launcher account.** Once you switch away from the account the game was started
+  with, a *Back to <name>* button returns to it without a restart, even though that account is not
+  saved in Keychain. Like every switch, it waits until you leave the world you are in.
+- Arrow keys pick a result without leaving the search box, and Enter switches to it.
+- The account list opens scrolled to your current account, and keeps its scroll position and
+  keyboard focus when the window is resized.
+
+### Fixed
+- **Realms kept using the previous account.** The Realms list, invitations and news still belonged
+  to the account the game was started with, and a "cannot sign in to Realms" answer from that
+  account stuck until restart. Realms now follows the switch.
+- Gameplay telemetry was still sent in the previous account's name after a switch.
+- **A queued switch could happen in the middle of a connection.** Server networks (Velocity,
+  BungeeCord) briefly unload the world while moving you between servers; Keychain took that for
+  "left the world" and switched your account underneath the live connection. A queued switch now
+  waits until you are back at a menu, and no switch is applied while a server is still logging you in.
+- **Add Offline Account: the typed name went nowhere** if you had last used Tab or the arrow keys.
+  The *Cancel* button had the focus instead of the name box, so Enter cancelled.
+- **Two games starting for the first time at once** could leave one of them with "saved accounts
+  could not be unlocked": it read the new key file while the other game was still writing it.
+- Two instances sharing one account list could undo each other's change when both saved within the
+  same second (file systems with coarse timestamps). Changes are now locked against each other and
+  compared by content.
+- *Start fresh* checks the vault once more first. If it opens after all (the problem was temporary,
+  such as the file being in use), nothing is moved aside. The screen also shows the actual reason,
+  so a vault made by a newer Keychain is not mistaken for a lost key.
+- A Microsoft session that was renewed during a switch is saved even if you picked another account
+  in the meantime, and the switch uses the renewed session even if saving it failed.
+- *Undo* puts back the account exactly as it was removed (including a session renewed since you
+  selected it) and restores *Remember account* if it pointed at that account.
+- Skins no longer flash back to the default skin while they are refreshed, and Keychain no longer
+  asks Mojang for the skin of an offline launcher account, which cannot have one.
+- Typing in the search box is no longer interrupted when the screen rebuilds itself.
+- The storage note in Settings no longer overlaps other text on very small windows.
+- Settings are saved atomically, so a crash cannot leave half a settings file.
+- The sign-in page listens on 127.0.0.1 even when Java prefers IPv6.
+
+### Tests
+- The key-file race was caught by an existing test that only failed some of the time; it now runs
+  30 rounds. New unit tests cover same-second changes from another instance, *Start fresh* on a
+  vault that recovered, and accounts removed elsewhere (35 unit tests).
+- The in-game test now also clicks *Back to <name>*, checks that Realms and telemetry follow the
+  switch, picks search results with the arrow keys, and adds an offline account after keyboard
+  navigation. It passes on 1.21.11, 26.1, 26.2 and 26.3.
+
 ## 4.0.1
 
 ### Fixed

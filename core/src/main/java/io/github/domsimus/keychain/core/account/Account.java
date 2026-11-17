@@ -84,9 +84,9 @@ public record Account(UUID id, String name, Kind kind, MicrosoftSession session,
         return new Account(id, name, kind, value, favorite, lastUsed);
     }
 
-    /** Copies the user's own choices (favorite, last use) onto a freshly signed-in copy. */
+    /** Copies the user's own choices (favorite, and the later of the two last uses) onto a freshly signed-in copy. */
     public Account keepingPreferencesOf(Account previous) {
-        Instant used = lastUsed != null ? lastUsed : previous.lastUsed;
+        Instant used = lastUsed == null || (previous.lastUsed != null && previous.lastUsed.isAfter(lastUsed)) ? previous.lastUsed : lastUsed;
         return new Account(id, name, kind, session, previous.favorite, used);
     }
 }

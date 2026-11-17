@@ -156,9 +156,12 @@ public final class Keychain implements ClientModInitializer {
     /**
      * Recovers from a vault that cannot be opened: the vault is moved aside, and if the key itself is
      * unreadable (new computer or Windows user) the key is moved aside too and a new one is made.
-     * Nothing is deleted. Returns the backup of the vault.
+     * Nothing is deleted. Returns the backup of the vault, or {@code null} if the vault opened after
+     * all (the problem was temporary) and nothing had to be moved.
      */
     public synchronized Path resetVault() throws java.io.IOException {
+        vault.load();
+        if (vault.state() == AccountVault.State.READY) return null;
         try {
             key();
         } catch (java.io.IOException unreadableKey) {

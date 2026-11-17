@@ -96,9 +96,16 @@ public record VaultData(List<Account> accounts, UUID lastActive) {
         return new VaultData(next, lastActive);
     }
 
+    /** Does nothing if the account is no longer saved (removed in another game instance). */
     public VaultData markUsed(UUID id, Instant when) {
+        if (find(id).isEmpty()) return this;
         VaultData updated = replace(id, account -> account.withLastUsed(when));
         return new VaultData(updated.accounts, id);
+    }
+
+    /** Sets which account is restored on the next launch; {@code null} means the launcher's own. */
+    public VaultData withLastActive(UUID id) {
+        return new VaultData(accounts, id);
     }
 
     /** Adds every account from {@code other} that this vault does not have yet. */

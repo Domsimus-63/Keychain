@@ -1,7 +1,9 @@
 package io.github.domsimus.keychain.session;
 
+import com.mojang.realmsclient.RealmsMainScreen;
 import io.github.domsimus.keychain.Keychain;
 import io.github.domsimus.keychain.compat.Compat;
+import io.github.domsimus.keychain.compat.KeychainScreen;
 import io.github.domsimus.keychain.core.account.Account;
 import io.github.domsimus.keychain.core.account.MicrosoftSession;
 import io.github.domsimus.keychain.core.auth.AuthException;
@@ -18,6 +20,13 @@ import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.client.gui.screens.ConnectScreen;
+import net.minecraft.client.gui.screens.DisconnectedScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.multiplayer.JoinMultiplayerScreen;
+import net.minecraft.client.gui.screens.multiplayer.ServerReconfigScreen;
+import net.minecraft.client.gui.screens.worldselection.SelectWorldScreen;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -44,11 +53,18 @@ public final class SessionManager {
     }
 
     private final Keychain keychain;
-    private UUID preparing;
+    /** Read by the background keep-alive too, hence volatile. */
+    private volatile UUID preparing;
     private Cancellation preparation;
     private int generation;
     private Account queued;
+    private boolean launcherQueued;
     private boolean keptAlive;
+    /**
+     * The session the game was started with, remembered right before Keychain first replaces it, so
+     * the player can return to an account that is not saved in Keychain without restarting.
+     */
+    private User launcher;
 
     public SessionManager(Keychain keychain) {
         this.keychain = keychain;
@@ -69,12 +85,17 @@ public final class SessionManager {
         return isActive(account) && account.accessToken().equals(minecraft().getUser().getAccessToken());
     }
 
+    private static boolean sameSession(User first, User second) {
+        return first.getProfileId().equals(second.getProfileId()) && first.getName().equals(second.getName())
+            && first.getAccessToken().equals(second.getAccessToken());
+    }
+
     /** The account currently being checked or refreshed before a switch, if any. */
     public Optional<UUID> preparing() {
         return Optional.ofNullable(preparing);
     }
 
-    /** The account waiting for the player to leave their world, if any. */
+    /** The saved account waiting for the player to leave their world, if any. */
     public Optional<Account> queued() {
         return Optional.ofNullable(queued);
     }
@@ -83,14 +104,58 @@ public final class SessionManager {
         return queued != null && queued.id().equals(account.id());
     }
 
-    public void cancelQueued() {
-        if (queued != null) toast(Component.translatable("keychain.toast.queue_cancelled", queued.name()), null);
-        queued = null;
+    /** Name of whichever account (saved, or the launcher's) is waiting for the player to leave. */
+    public Optional<String> queuedName() {
+        if (queued != null) return Optional.of(queued.name());
+        return launcherQueued && launcher != null ? Optional.of(launcher.getName()) : Optional.empty();
     }
 
+    public void cancelQueued() {
+        queuedName().ifPresent(name -> toast(Component.translatable("keychain.toast.queue_cancelled", name), null));
+        queued = null;
+        launcherQueued = false;
+    }
+
+    /**
+     * The account the game was started with, when the player has switched away from it and it is
+     * not saved in Keychain (a saved account is switched to from the list instead).
+     */
+    public Optional<User> launcher() {
+        if (launcher == null || sameSession(launcher, minecraft().getUser())) return Optional.empty();
+        if (keychain.vault().find(launcher.getProfileId()).isPresent()) return Optional.empty();
+        return Optional.of(launcher);
+    }
+
+    /**
+     * True while a world or server connection exists or is being set up. A connection is bound to
+     * the identity it was opened with, so the session must not change underneath it.
+     */
     public static boolean inWorld() {
         Minecraft minecraft = minecraft();
-        return minecraft.level != null || minecraft.getConnection() != null;
+        if (minecraft.level != null || minecraft.getConnection() != null || minecraft.getSingleplayerServer() != null) return true;
+        // Logging in, and a server sending the player back to its configuration phase: no world is
+        // loaded during either, but the connection is very much alive.
+        Screen screen = Compat.currentScreen();
+        return screen instanceof ConnectScreen || screen instanceof ServerReconfigScreen;
+    }
+
+    /**
+     * A menu the game only ever shows without a connection. A queued switch waits for one of these
+     * rather than for "no world loaded": proxy networks unload the world while moving the player
+     * between servers, and switching then would change the identity of a live connection.
+     */
+    private static boolean atMenu() {
+        Screen screen = Compat.currentScreen();
+        return screen instanceof TitleScreen || screen instanceof JoinMultiplayerScreen || screen instanceof SelectWorldScreen
+            || screen instanceof RealmsMainScreen || screen instanceof DisconnectedScreen || screen instanceof KeychainScreen;
+    }
+
+    /** Only the latest request takes effect: a new one cancels a switch that is still preparing. */
+    private int supersede() {
+        if (preparation != null) preparation.cancel();
+        preparing = null;
+        preparation = null;
+        return ++generation;
     }
 
     /**
@@ -98,18 +163,42 @@ public final class SessionManager {
      * the latest request takes effect: starting a new switch cancels one that is still preparing.
      */
     public CompletableFuture<Outcome> switchTo(Account account) {
-        int request = ++generation;
-        if (preparation != null) preparation.cancel();
-        preparing = null;
-        preparation = null;
+        int request = supersede();
         Account.Status status = account.status(Instant.now());
         if (status == Account.Status.NEEDS_SIGN_IN) return CompletableFuture.completedFuture(Outcome.NEEDS_SIGN_IN);
         if (isActiveSession(account) && status == Account.Status.READY) {
             queued = null;
+            launcherQueued = false;
             return CompletableFuture.completedFuture(Outcome.ALREADY_ACTIVE);
         }
         if (!account.isMicrosoft()) return CompletableFuture.completedFuture(activate(account));
         return prepareThenActivate(account, request);
+    }
+
+    /**
+     * Returns to the account the game was started with, using the launcher's session exactly as the
+     * game did at startup. Like any switch, it waits while the player is in a world.
+     */
+    public Outcome switchToLauncher() {
+        User target = launcher;
+        if (target == null) return Outcome.CANCELLED;
+        supersede();
+        if (sameSession(target, minecraft().getUser())) {
+            queued = null;
+            launcherQueued = false;
+            return Outcome.ALREADY_ACTIVE;
+        }
+        if (inWorld()) {
+            queued = null;
+            launcherQueued = true;
+            toast(Component.translatable("keychain.toast.queued.title", target.getName()), Component.translatable("keychain.toast.queued.body"));
+            return Outcome.QUEUED;
+        }
+        if (!apply(target, !minecraft().isOfflineDeveloperMode())) return Outcome.FAILED;
+        // "Remember account" should start as the launcher's account again, too.
+        keychain.vault().update(vault -> vault.withLastActive(null));
+        SkinCache.forget(target.getProfileId());
+        return Outcome.SWITCHED;
     }
 
     private CompletableFuture<Outcome> prepareThenActivate(Account account, int request) {
@@ -118,20 +207,25 @@ public final class SessionManager {
         preparing = account.id();
         CompletableFuture<Outcome> result = new CompletableFuture<>();
         keychain.auth().prepare(account, cancellation).whenComplete((prepared, failure) -> minecraft().execute(() -> {
-            if (request != generation) {
-                result.complete(Outcome.CANCELLED);
-                return;
+            boolean latest = request == generation;
+            if (latest) {
+                preparing = null;
+                preparation = null;
             }
-            preparing = null;
-            preparation = null;
-            if (failure == null && keychain.vault().find(account.id()).isEmpty()) {
-                // Removed while it was being checked: do not bring it back.
+            boolean stillSaved = keychain.vault().find(account.id()).isPresent();
+            if (failure == null && stillSaved && !prepared.equals(account) && !keychain.vault().upsert(prepared)) {
+                // Renewed tokens are worth keeping even if this switch was overtaken by another one.
+                Keychain.LOGGER.warn("Keychain could not save the renewed session of {}", prepared.name());
+            }
+            if (!latest || (failure == null && !stillSaved)) {
+                // Overtaken by a newer switch, or removed while it was being checked: do not bring it back.
                 result.complete(Outcome.CANCELLED);
                 return;
             }
             if (failure == null) {
-                if (!prepared.equals(account)) keychain.vault().upsert(prepared);
-                result.complete(activate(keychain.vault().find(prepared.id()).orElse(prepared)));
+                // Use the checked account itself: it carries the tokens that were just confirmed, even
+                // if saving them failed.
+                result.complete(activate(prepared));
                 return;
             }
             AuthException error = MicrosoftAuth.unwrap(failure);
@@ -168,38 +262,53 @@ public final class SessionManager {
     private Outcome activate(Account account) {
         if (inWorld()) {
             queued = account;
+            launcherQueued = false;
             toast(Component.translatable("keychain.toast.queued.title", account.name()), Component.translatable("keychain.toast.queued.body"));
             return Outcome.QUEUED;
         }
-        try {
-            User current = minecraft().getUser();
-            User user = new User(account.name(), account.id(), account.accessToken(),
-                Optional.ofNullable(account.session() == null ? null : account.session().xuid()), current.getClientId());
-            Compat.applySession(minecraft(), user, account.isMicrosoft());
-        } catch (RuntimeException failure) {
-            Keychain.LOGGER.error("Keychain could not switch to {}", account.name(), failure);
-            toast(Component.translatable("keychain.toast.switch_failed", account.name()), Component.translatable("keychain.toast.switch_failed.body"));
-            return Outcome.FAILED;
-        }
-        queued = null;
+        User user = new User(account.name(), account.id(), account.accessToken(),
+            Optional.ofNullable(account.session() == null ? null : account.session().xuid()), minecraft().getUser().getClientId());
+        if (!apply(user, account.isMicrosoft())) return Outcome.FAILED;
         keychain.vault().markUsed(account.id(), Instant.now());
         SkinCache.forget(account.id());
-        toast(Component.translatable("keychain.toast.switched", account.name()), null);
         Keychain.LOGGER.info("Keychain switched to {} ({})", account.name(), account.kind());
         return Outcome.SWITCHED;
     }
 
-    /** Applies a queued switch once the player has left their world. */
-    public void tick() {
-        if (queued != null && !inWorld()) {
-            Account account = keychain.vault().find(queued.id()).orElse(null);
-            queued = null;
-            if (account != null) switchTo(account).thenAccept(outcome -> {
-                if (outcome == Outcome.NEEDS_SIGN_IN) {
-                    toast(Component.translatable("keychain.toast.restore_failed", account.name()), Messages.reason(AuthException.Reason.SESSION_REVOKED));
-                }
-            });
+    /** Makes {@code user} the game's session. Returns {@code false}, with the old session intact, on failure. */
+    private boolean apply(User user, boolean online) {
+        Minecraft minecraft = minecraft();
+        if (launcher == null) launcher = minecraft.getUser();
+        try {
+            Compat.applySession(minecraft, user, online);
+        } catch (RuntimeException failure) {
+            Keychain.LOGGER.error("Keychain could not switch to {}", user.getName(), failure);
+            toast(Component.translatable("keychain.toast.switch_failed", user.getName()), Component.translatable("keychain.toast.switch_failed.body"));
+            return false;
         }
+        queued = null;
+        launcherQueued = false;
+        // An open title screen still shows the previous account's Realms invitations and news.
+        if (Compat.currentScreen() instanceof TitleScreen) Compat.setScreen(new TitleScreen());
+        toast(Component.translatable("keychain.toast.switched", user.getName()), null);
+        return true;
+    }
+
+    /** Applies a queued switch once the player is back at a menu. */
+    public void tick() {
+        if ((queued == null && !launcherQueued) || inWorld() || !atMenu()) return;
+        if (launcherQueued) {
+            launcherQueued = false;
+            switchToLauncher();
+            return;
+        }
+        Account account = keychain.vault().find(queued.id()).orElse(null);
+        queued = null;
+        if (account != null) switchTo(account).thenAccept(outcome -> {
+            if (outcome == Outcome.NEEDS_SIGN_IN) {
+                toast(Component.translatable("keychain.toast.restore_failed", account.name()), Messages.reason(AuthException.Reason.SESSION_REVOKED));
+            }
+        });
     }
 
     /** At startup: optionally return to the last account, then renew sessions that are going stale. */

@@ -5,6 +5,9 @@ import com.mojang.authlib.services.ProfileResult;
 import com.mojang.authlib.services.FriendsService;
 import com.mojang.authlib.services.MinecraftServicesDiscoveryService;
 import com.mojang.blaze3d.Blaze3D;
+import com.mojang.realmsclient.RealmsAvailability;
+import com.mojang.realmsclient.client.RealmsClient;
+import com.mojang.realmsclient.gui.RealmsDataFetcher;
 import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -21,6 +24,7 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.multiplayer.ProfileKeyPairManager;
 import net.minecraft.client.multiplayer.chat.report.ReportEnvironment;
 import net.minecraft.client.multiplayer.chat.report.ReportingContext;
+import net.minecraft.client.telemetry.ClientTelemetryManager;
 import net.minecraft.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,7 +84,8 @@ public final class Compat {
      * Makes {@code user} the signed-in account. Besides the user itself this rebuilds everything
      * Minecraft derived from the old account at startup: the services API client, chat signing keys
      * (without this, servers that enforce secure chat reject the new account's messages), the
-     * player-reporting context, the social manager and the cached profile used for the player's skin.
+     * player-reporting context, the social manager, the cached profile used for the player's skin, and
+     * the Realms and telemetry clients.
      * Only call while not connected to a world or server.
      */
     public static void applySession(Minecraft minecraft, User user, boolean online) {
@@ -135,5 +140,29 @@ public final class Compat {
             LOGGER.debug("Keychain could not stop the previous friend list updates", failure);
         }
         if (social.isFriendListEnabled()) updates.start();
+        rebuildRealmsAndTelemetry(minecraft, service, user);
+    }
+
+    /**
+     * Realms and telemetry belong to the account as well, and Minecraft sets both up only once at
+     * startup. Without this the Realms list, invitations and availability check keep using the
+     * previous account, and gameplay telemetry keeps being sent in its name. Runs after the user was
+     * swapped; a failure here is logged and never undoes the switch.
+     */
+    private static void rebuildRealmsAndTelemetry(Minecraft minecraft, UserApiService service, User user) {
+        try {
+            // A new Realms client is created for the new user; the availability answer is asked again.
+            minecraft.realmsDataFetcher = new RealmsDataFetcher(RealmsClient.getOrCreate(minecraft));
+            RealmsAvailability.future = null;
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Keychain could not reset Realms for {}", user.getName(), failure);
+        }
+        try {
+            // Close first, so the old and the new manager never work on the telemetry log folder together.
+            minecraft.telemetryManager.close();
+            minecraft.telemetryManager = new ClientTelemetryManager(minecraft, service, user);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Keychain could not reset telemetry for {}", user.getName(), failure);
+        }
     }
 }

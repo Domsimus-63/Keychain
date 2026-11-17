@@ -16,3 +16,9 @@ mutable    field net/minecraft/client/Minecraft playerSocialManager Lnet/minecra
 accessible field net/minecraft/client/Minecraft reportingContext Lnet/minecraft/client/multiplayer/chat/report/ReportingContext;
 accessible field net/minecraft/client/Minecraft remoteFriendListUpdateHandler Lnet/minecraft/client/gui/screens/social/RemoteFriendListUpdateHandler;
 mutable    field net/minecraft/client/Minecraft remoteFriendListUpdateHandler Lnet/minecraft/client/gui/screens/social/RemoteFriendListUpdateHandler;
+# Realms and telemetry are set up once for the launch account and must follow the switch too.
+accessible field net/minecraft/client/Minecraft telemetryManager Lnet/minecraft/client/telemetry/ClientTelemetryManager;
+mutable    field net/minecraft/client/Minecraft telemetryManager Lnet/minecraft/client/telemetry/ClientTelemetryManager;
+accessible field net/minecraft/client/Minecraft realmsDataFetcher Lcom/mojang/realmsclient/gui/RealmsDataFetcher;
+mutable    field net/minecraft/client/Minecraft realmsDataFetcher Lcom/mojang/realmsclient/gui/RealmsDataFetcher;
+accessible field com/mojang/realmsclient/RealmsAvailability future Ljava/util/concurrent/CompletableFuture;

@@ -5,6 +5,7 @@
   "keychain.button.tooltip": "Keychain: hesap değiştir\n%s olarak oynuyorsun",
   "keychain.header.playing_as": "%s olarak oynuyorsun",
   "keychain.header.queued": "%s olarak oynuyorsun · dünyadan çıkınca sıradaki: %s",
+  "keychain.header.queued.short": "Dünyadan çıkınca sıradaki: %s",
   "keychain.count": "%s / %s hesap",
   "keychain.hint": "Geçmek için çift tıkla · Aramak için %s+F",
   "keychain.removed": "%s kaldırıldı.",
@@ -66,15 +67,18 @@
   "keychain.action.add_microsoft": "Microsoft ekle",
   "keychain.action.add_offline": "Çevrimdışı ekle",
   "keychain.action.settings": "Ayarlar",
+  "keychain.action.launcher": "%s hesabına dön",
+  "keychain.action.launcher.tooltip": "Oyunun başlatıldığı hesaba geri dön. Bu hesap Keychain'de kayıtlı değil; yeniden başlatmadan ona dönmenin tek yolu budur.",
 
   "keychain.remove.title": "%s kaldırılsın mı?",
   "keychain.remove.message": "Hesap Keychain'den silinir. İstediğin zaman yeniden ekleyebilirsin.",
   "keychain.remove.message_active": "Hesap değiştirene veya yeniden başlatana kadar bu hesapla girişli kalırsın, ama hesap Keychain'den silinir.",
 
   "keychain.vault.unreadable": "Kayıtlı hesapların açılamadı.",
-  "keychain.vault.unreadable.hint": "Bu, başka bir bilgisayara veya Windows kullanıcısına geçince olur. Hiçbir şey silinmedi.",
+  "keychain.vault.unreadable.hint": "Bu genellikle başka bir bilgisayara veya Windows kullanıcısına geçince olur. Hiçbir şey silinmedi.",
   "keychain.vault.reset": "Yeniden başla (yedek tutulur)",
   "keychain.vault.reset.done": "Yeni bir kasa oluşturuldu. Eski dosya yedek olarak saklandı.",
+  "keychain.vault.recovered": "Kayıtlı hesapların yine de açıldı. Hiçbir şey değiştirilmedi.",
 
   "keychain.toast.switched": "Artık %s olarak oynuyorsun",
   "keychain.toast.queued.title": "%s hesabına geçiliyor",

@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -29,7 +28,11 @@ public final class VaultKey {
 
     private VaultKey() {}
 
-    /** Loads the key at {@code file}, creating it on first use. Safe when several games start at once. */
+    /**
+     * Loads the key at {@code file}, creating it on first use. Safe when several games start at once:
+     * the key is written to a temporary file first and only then published under its real name, so
+     * another game never sees a half-written key, and every game ends up with the key that won.
+     */
     public static SecretKey loadOrCreate(Path file) throws IOException {
         if (Files.exists(file)) return read(file);
         byte[] raw = new byte[KEY_BYTES];
@@ -38,17 +41,48 @@ public final class VaultKey {
             ? DPAPI + Base64.getEncoder().encodeToString(Dpapi.protect(raw))
             : PLAIN + Base64.getEncoder().encodeToString(raw);
         Files.createDirectories(file.getParent());
+        Path temporary = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
         try {
-            Files.writeString(file, encoded, StandardCharsets.US_ASCII, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-        } catch (FileAlreadyExistsException anotherGameWon) {
-            return read(file);
+            Files.writeString(temporary, encoded, StandardCharsets.US_ASCII);
+            restrictToOwner(temporary);
+            publish(temporary, file);
+        } finally {
+            Files.deleteIfExists(temporary);
         }
-        restrictToOwner(file);
-        return new SecretKeySpec(raw, "AES");
+        // Always return what is on disk: if another game published first, its key is the one in use.
+        return read(file);
+    }
+
+    /** Makes the finished key file appear as {@code file} in one step, unless one already exists. */
+    private static void publish(Path temporary, Path file) throws IOException {
+        try {
+            Files.createLink(file, temporary);
+            return;
+        } catch (FileAlreadyExistsException anotherGameWon) {
+            return;
+        } catch (UnsupportedOperationException | IOException noHardLinks) {
+            // File systems without hard links (FAT, some network shares): fall through.
+        }
+        try {
+            Files.copy(temporary, file);
+            restrictToOwner(file);
+        } catch (FileAlreadyExistsException anotherGameWon) {
+            // Keep the existing key.
+        }
     }
 
     private static SecretKey read(Path file) throws IOException {
         String content = Files.readString(file, StandardCharsets.US_ASCII).strip();
+        // An empty file is one that another game (or an older Keychain) is still writing: wait briefly.
+        for (int attempt = 0; content.isEmpty() && attempt < 20; attempt++) {
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            content = Files.readString(file, StandardCharsets.US_ASCII).strip();
+        }
         byte[] raw;
         try {
             if (content.startsWith(DPAPI)) {

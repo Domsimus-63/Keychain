@@ -7,9 +7,11 @@ no restart.
 ## Why Keychain
 
 - **Works on real servers.** Switching rebuilds your chat-signing keys and session services, so
-  servers with secure chat accept the new account right away.
-- **Safe mid-game.** Switch from the pause menu and Keychain applies it the moment you leave the
-  world — your current connection is never broken.
+  servers with secure chat accept the new account right away. Realms follows the switch too.
+- **Safe mid-game.** Switch from the pause menu and Keychain applies it once you are back at a
+  menu — your current connection is never broken, even on networks that move you between servers.
+- **Always a way back.** *Back to <name>* returns to the account you launched the game with, even
+  if you never added it to Keychain.
 - **Familiar sign-in.** Microsoft's page opens in your browser, just like the official launcher.
 - **Errors you can fix.** No Xbox profile, child account, game not owned… Keychain tells you what
   happened and what to do.
@@ -19,7 +21,7 @@ no restart.
 ## Features
 
 - Double-click, Enter, or the hover **Use** button to switch
-- Search (Ctrl+F), filters, sorting, favorites, your own order
+- Search (Ctrl+F, arrow keys, Enter), filters, sorting, favorites, your own order
 - Face icons and a draggable 3D skin preview
 - Expired sessions refresh automatically
 - Optional: start the game as your last account

@@ -5,6 +5,7 @@
   "keychain.button.tooltip": "Keychain: Konto wechseln\nAngemeldet als %s",
   "keychain.header.playing_as": "Angemeldet als %s",
   "keychain.header.queued": "Angemeldet als %s · danach %s, sobald du die Welt verlässt",
+  "keychain.header.queued.short": "Danach %s, sobald du die Welt verlässt",
   "keychain.count": "%s von %s Konten",
   "keychain.hint": "Doppelklick zum Wechseln · %s+F zum Suchen",
   "keychain.removed": "%s entfernt.",
@@ -66,15 +67,18 @@
   "keychain.action.add_microsoft": "Microsoft hinzufügen",
   "keychain.action.add_offline": "Offline hinzufügen",
   "keychain.action.settings": "Einstellungen",
+  "keychain.action.launcher": "Zurück zu %s",
+  "keychain.action.launcher.tooltip": "Zurück zu dem Konto wechseln, mit dem das Spiel gestartet wurde. Es ist nicht in Keychain gespeichert, daher führt ohne Neustart nur dieser Knopf dorthin zurück.",
 
   "keychain.remove.title": "%s entfernen?",
   "keychain.remove.message": "Das Konto wird aus Keychain gelöscht. Du kannst es jederzeit wieder hinzufügen.",
   "keychain.remove.message_active": "Du bleibst mit diesem Konto angemeldet, bis du wechselst oder neu startest, aber es wird aus Keychain gelöscht.",
 
   "keychain.vault.unreadable": "Deine gespeicherten Konten konnten nicht entsperrt werden.",
-  "keychain.vault.unreadable.hint": "Das passiert nach einem Wechsel auf einen anderen Computer oder Windows-Benutzer. Nichts wurde gelöscht.",
+  "keychain.vault.unreadable.hint": "Das passiert meist nach einem Wechsel auf einen anderen Computer oder Windows-Benutzer. Nichts wurde gelöscht.",
   "keychain.vault.reset": "Neu beginnen (mit Sicherung)",
   "keychain.vault.reset.done": "Neuer Tresor angelegt. Die alte Datei wurde als Sicherung behalten.",
+  "keychain.vault.recovered": "Deine gespeicherten Konten ließen sich doch öffnen. Nichts wurde geändert.",
 
   "keychain.toast.switched": "Jetzt angemeldet als %s",
   "keychain.toast.queued.title": "Wechsel zu %s",

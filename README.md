@@ -15,9 +15,12 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
 - **One-click switching.** Double-click an account, press Enter, or hover a row and click **Use**.
 - **Switching that works on real servers.** Keychain rebuilds everything Minecraft ties to the signed-in
   account: chat-signing keys (so servers with secure chat accept you), the services connection,
-  player reporting, your profile and skin, and on 26.2+ the friends list.
-- **Safe while playing.** Switching inside a world is queued and happens the moment you leave, so
-  your current connection never breaks halfway.
+  player reporting, your profile and skin, Realms, telemetry, and on 26.2+ the friends list.
+- **Safe while playing.** Switching inside a world is queued and happens once you are back at a
+  menu, so your current connection never breaks halfway, not even on server networks that move
+  you between servers.
+- **A way back to your launcher account.** The account the game was started with does not have to
+  be saved in Keychain: after switching away, *Back to <name>* returns to it without a restart.
 - **Microsoft sign-in like the official launcher.** Microsoft's page opens in your browser and
   Keychain picks up the result automatically. If no browser opens, copy the link instead.
 - **Clear errors.** "No Xbox profile", "child account", "doesn't own Minecraft" and more are explained
@@ -27,8 +30,9 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
   in the background about once a week, so they do not expire after Microsoft's 90-day limit.
 - **Undo and second chances.** Removing an account offers *Undo* (or Ctrl+Z) for 10 seconds; a
   queued in-world switch can be cancelled with *Stay here*.
-- **Find accounts fast.** Search (Ctrl+F), filter (All / Microsoft / Offline / Favorites), sort
-  (Custom / Name / Recent), favorites pinned to the top, your own order with ▲▼ or Alt+Up/Down.
+- **Find accounts fast.** Search (Ctrl+F, arrow keys to pick a result, Enter to switch), filter
+  (All / Microsoft / Offline / Favorites), sort (Custom / Name / Recent), favorites pinned to the
+  top, your own order with ▲▼ or Alt+Up/Down.
 - **Skin previews.** Heads in the list and a draggable 3D model of the selected account.
 - **Remember account.** Optionally start the game as the account you used last.
 - **Share accounts between instances.** Optionally use one account list for every instance on your PC.
@@ -59,11 +63,11 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
 
 | Minecraft | Jar | Java |
 | --- | --- | --- |
-| 1.21.11 | `keychain-4.0.1+mc1.21.11.jar` | 21+ |
-| 26.1, 26.1.1, 26.1.2 | `keychain-4.0.1+mc26.1.jar` | 25+ |
-| 26.2 | `keychain-4.0.1+mc26.2.jar` | 25+ |
-| 26.3 | `keychain-4.0.1+mc26.3.jar` | 25+ |
-| any of the above | `keychain-4.0.1-universal.jar` | |
+| 1.21.11 | `keychain-4.1.0+mc1.21.11.jar` | 21+ |
+| 26.1, 26.1.1, 26.1.2 | `keychain-4.1.0+mc26.1.jar` | 25+ |
+| 26.2 | `keychain-4.1.0+mc26.2.jar` | 25+ |
+| 26.3 | `keychain-4.1.0+mc26.3.jar` | 25+ |
+| any of the above | `keychain-4.1.0-universal.jar` | |
 
 ## Where your data lives
 
@@ -75,6 +79,8 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
 
 The vault can only be opened with the key on the computer (and, on Windows, the Windows user) that
 created it. On a new computer, Keychain shows *Start fresh*, which keeps the old file as a backup.
+An `accounts.vault.lock` file next to the vault keeps two running games from saving at the same
+moment; it is empty and safe to delete while no game is running.
 Encryption protects against copied or shared files; it cannot protect against malware running as you.
 
 ## Building
