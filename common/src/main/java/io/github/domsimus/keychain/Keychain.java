@@ -2,16 +2,16 @@ package io.github.domsimus.keychain;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import io.github.domsimus.keychain.compat.Compat;
+import io.github.domsimus.keychain.core.SafeFiles;
 import io.github.domsimus.keychain.core.Settings;
-import io.github.domsimus.keychain.core.account.Account;
-import io.github.domsimus.keychain.core.account.MicrosoftSession;
 import io.github.domsimus.keychain.core.auth.MicrosoftAuth;
 import io.github.domsimus.keychain.core.vault.AccountVault;
-import io.github.domsimus.keychain.core.vault.LegacyVault;
+import io.github.domsimus.keychain.core.vault.BackupCodec;
 import io.github.domsimus.keychain.core.vault.VaultData;
 import io.github.domsimus.keychain.core.vault.VaultKey;
 import io.github.domsimus.keychain.session.SessionManager;
 import io.github.domsimus.keychain.ui.AccountsScreen;
+import io.github.domsimus.keychain.ui.KeychainLanguage;
 import io.github.domsimus.keychain.ui.MenuButtons;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,21 +46,15 @@ public final class Keychain implements ClientModInitializer {
     private MicrosoftAuth auth;
     private SessionManager sessions;
     private SecretKey key;
-    private String migrationProblem;
     private KeyMapping openKey;
 
     @Override
     public void onInitializeClient() {
         instance = this;
-        boolean firstRun = !Files.exists(paths.settings());
         settings = Settings.load(paths.settings());
-        if (firstRun) {
-            String oldClientId = LegacyVault.readClientId(paths.legacyConfig());
-            if (oldClientId != null && Settings.isValidClientId(oldClientId)) settings.customClientId = oldClientId;
-            settings.save();
-        }
+        if (!Files.exists(paths.settings())) settings.save();
+        KeychainLanguage.select(settings.language);
         vault = openVault(settings.sharedVault ? paths.sharedVault() : paths.instanceVault());
-        migrateLegacyVault();
 
         AtomicInteger threads = new AtomicInteger();
         ExecutorService executor = Executors.newCachedThreadPool(task -> {
@@ -76,6 +70,13 @@ public final class Keychain implements ClientModInitializer {
         openKey = Compat.registerKey(new KeyMapping("key.keychain.open", InputConstants.UNKNOWN.getValue(),
             KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "keychain"))));
         ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
+            // A resource reload (or a change of the game's language) replaces the game's language
+            // table; put Keychain's own language choice back on top of the new one.
+            KeychainLanguage.apply();
+            if (vault.takeRestoredNotice()) {
+                SessionManager.toast(net.minecraft.network.chat.Component.translatable("keychain.vault.restored"),
+                    net.minecraft.network.chat.Component.translatable("keychain.vault.restored.body"));
+            }
             sessions.tick();
             while (openKey.consumeClick()) {
                 if (Compat.currentScreen() == null) Compat.setScreen(new AccountsScreen(null));
@@ -117,11 +118,6 @@ public final class Keychain implements ClientModInitializer {
     /** True when the "Open Keychain" key has no binding, so the menu buttons are the only way in. */
     public boolean openKeyUnbound() {
         return openKey == null || openKey.isUnbound();
-    }
-
-    /** Why old Keychain accounts could not be imported, or {@code null}. */
-    public String migrationProblem() {
-        return migrationProblem;
     }
 
     /** Runs whenever the account list changes, including when switching to another vault. */
@@ -186,35 +182,32 @@ public final class Keychain implements ClientModInitializer {
         return key;
     }
 
-    /** Imports {@code config/account-switcher.json} from Keychain 3.x and older, once. */
-    private void migrateLegacyVault() {
-        Path legacy = paths.legacyVault();
-        if (!Files.exists(legacy)) return;
-        try {
-            // Old refresh tokens belong to whichever Azure app the old version used.
-            String oldClientId = LegacyVault.readClientId(paths.legacyConfig());
-            List<Account> accounts = LegacyVault.read(legacy).stream().map(account -> {
-                MicrosoftSession s = account.session();
-                if (s == null) return account;
-                return account.withSession(new MicrosoftSession(s.accessToken(), s.refreshToken(), s.xuid(), s.expiresAt(),
-                    oldClientId != null ? oldClientId : Settings.DEFAULT_CLIENT_ID, null));
-            }).toList();
-            VaultData imported = new VaultData(accounts, null);
-            if (!vault.update(data -> data.mergeMissing(imported))) {
-                migrationProblem = "The new vault could not be saved";
-                return;
-            }
-            LOGGER.info("Keychain imported {} accounts from {}", accounts.size(), legacy.getFileName());
-            try {
-                Files.move(legacy, legacy.resolveSibling(legacy.getFileName() + ".migrated"));
-            } catch (java.io.IOException failure) {
-                // Already imported; importing again next launch adds nothing because duplicates are skipped.
-                LOGGER.warn("Keychain could not rename {} after importing it", legacy, failure);
-            }
-        } catch (Exception failure) {
-            migrationProblem = failure.getMessage();
-            LOGGER.warn("Keychain could not import {}; the file was left untouched", legacy, failure);
-        }
+    /**
+     * Writes every saved account to a new password-protected backup in the backups folder and
+     * returns its path. Slow on purpose (the password is stretched), so call it off the render thread.
+     */
+    public Path exportBackup(char[] password) throws java.io.IOException {
+        String encoded = BackupCodec.encode(vault.data(), password);
+        Path folder = paths.backups();
+        String stamp = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss").format(java.time.LocalDateTime.now());
+        Path file = folder.resolve("keychain-backup_" + stamp + BackupCodec.EXTENSION);
+        SafeFiles.writeAtomically(file, encoded);
+        return file;
+    }
+
+    /**
+     * Restores the accounts in a backup: accounts that are missing are added, and saved accounts
+     * that are signed out get the backup's sign-in if it is newer. Nothing is removed.
+     */
+    public VaultData.ImportResult importBackup(Path file, char[] password) throws java.io.IOException {
+        VaultData backup = BackupCodec.decode(Files.readString(file, java.nio.charset.StandardCharsets.UTF_8), password);
+        VaultData.ImportResult[] result = new VaultData.ImportResult[1];
+        boolean saved = vault.update(data -> {
+            result[0] = data.importFrom(backup, java.time.Instant.now());
+            return result[0].data();
+        });
+        if (!saved) throw new java.io.IOException("The restored accounts could not be saved");
+        return result[0];
     }
 
     /** Convenience for UI code that needs the game instance. */

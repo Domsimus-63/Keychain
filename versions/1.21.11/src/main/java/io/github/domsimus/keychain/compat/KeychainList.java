@@ -10,6 +10,44 @@ public abstract class KeychainList<E extends KeychainList.Row<E>> extends Object
         super(minecraft, width, height, top, rowHeight);
     }
 
+    /** Inner padding between the frame and the rows, and between the rows and the scrollbar. */
+    private static final int PADDING = 6;
+    private static final int SCROLLBAR = 6;
+
+    /** The scrollbar sits inside the frame, against its right edge. */
+    @Override
+    protected int scrollBarX() {
+        return getX() + getWidth() - SCROLLBAR - 1;
+    }
+
+    /** Rows start a fixed distance from the left edge of the frame... */
+    @Override
+    public int getRowLeft() {
+        return getX() + PADDING;
+    }
+
+    /** ...and stop the same distance before the scrollbar. */
+    @Override
+    public int getRowWidth() {
+        return Math.max(40, getWidth() - 2 * PADDING - SCROLLBAR - 1);
+    }
+
+    @Override
+    public int getRowRight() {
+        return getRowLeft() + getRowWidth();
+    }
+
+    /** Every Keychain list sits in the same framed panel as the rest of Keychain's screens. */
+    @Override
+    protected void renderListBackground(GuiGraphics graphics) {
+        io.github.domsimus.keychain.ui.Palette.panel(new Gfx(graphics), getX(), getY(), getWidth(), getHeight());
+    }
+
+    /** The frame replaces vanilla's separator lines above and below the list. */
+    @Override
+    protected void renderListSeparators(GuiGraphics graphics) {
+    }
+
     @Override
     protected void renderSelection(GuiGraphics graphics, E entry, int color) {
         // Rows draw their own selected state.

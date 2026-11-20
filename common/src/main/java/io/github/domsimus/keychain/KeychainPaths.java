@@ -28,12 +28,9 @@ public record KeychainPaths(Path instanceDir, Path userDir) {
         return userDir.resolve("vault.key");
     }
 
-    public Path legacyVault() {
-        return instanceDir.getParent().resolve(io.github.domsimus.keychain.core.vault.LegacyVault.FILE_NAME);
-    }
-
-    public Path legacyConfig() {
-        return instanceDir.getParent().resolve(io.github.domsimus.keychain.core.vault.LegacyVault.CONFIG_NAME);
+    /** Password-protected backups, shared by every instance so a backup can be restored anywhere. */
+    public Path backups() {
+        return userDir.resolve("backups");
     }
 
     private static Path userDirectory() {

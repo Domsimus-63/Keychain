@@ -1,6 +1,7 @@
 package io.github.domsimus.keychain.ui;
 
 import io.github.domsimus.keychain.core.account.Account;
+import io.github.domsimus.keychain.core.account.MicrosoftSession;
 import io.github.domsimus.keychain.core.auth.AuthException;
 import java.time.Duration;
 import java.time.Instant;
@@ -9,6 +10,9 @@ import net.minecraft.network.chat.Component;
 
 /** Translated wording shared by several screens. */
 public final class Messages {
+    /** Microsoft drops a refresh token that has not been used for about 90 days. */
+    private static final Duration LIKELY_EXPIRED = Duration.ofDays(90);
+
     private Messages() {}
 
     /** What went wrong and what to do about it, for a sign-in failure. */
@@ -22,6 +26,20 @@ public final class Messages {
 
     public static Component status(Account.Status status) {
         return Component.translatable("keychain.status." + status.name().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Why the account needs attention, or {@code null} if it does not: it is signed out, or its
+     * sign-in was last renewed so long ago that Microsoft has most likely dropped it.
+     */
+    public static Component warning(Account account, Instant now) {
+        Account.Status status = account.status(now);
+        if (status == Account.Status.NEEDS_SIGN_IN) return Component.translatable("keychain.warning.signed_out");
+        MicrosoftSession session = account.session();
+        if (session != null && session.obtainedAt() != null && session.isOlderThan(LIKELY_EXPIRED, now)) {
+            return Component.translatable("keychain.warning.stale");
+        }
+        return null;
     }
 
     public static int statusColor(Account.Status status) {

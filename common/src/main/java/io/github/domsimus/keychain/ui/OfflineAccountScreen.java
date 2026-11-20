@@ -110,8 +110,8 @@ public final class OfflineAccountScreen extends KeychainScreen {
 
     @Override
     protected void drawForeground(Gfx gfx, int mouseX, int mouseY, float delta) {
-        gfx.centered(font, title, width / 2, 15, Palette.TEXT);
-        gfx.centered(font, Component.translatable("keychain.offline.subtitle"), width / 2, 29, Palette.MUTED);
+        gfx.centered(font, title, width / 2, Palette.TITLE_Y, Palette.TEXT);
+        gfx.centered(font, Component.translatable("keychain.offline.subtitle"), width / 2, Palette.SUBTITLE_Y, Palette.MUTED);
         gfx.text(font, Component.translatable("keychain.offline.name"), panelX + 12, panelY + 14, Palette.TEXT);
         String text = trimmed();
         gfx.face(Account.isValidOfflineName(text) ? DefaultPlayerSkin.get(Account.offlineUuid(text)) : DefaultPlayerSkin.getDefaultSkin(),

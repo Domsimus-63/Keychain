@@ -34,6 +34,13 @@ public final class VaultCodec {
 
     private VaultCodec() {}
 
+    /** The file is fine, but written in a format this Keychain is too old to read. */
+    public static final class NewerVersionException extends IOException {
+        public NewerVersionException(String message) {
+            super(message);
+        }
+    }
+
     public static String encode(VaultData data, SecretKey key) throws IOException {
         byte[] iv = new byte[IV_BYTES];
         RANDOM.nextBytes(iv);
@@ -63,7 +70,8 @@ public final class VaultCodec {
         }
         if (!FORMAT.equals(string(envelope, "format"))) throw new IOException("Not a Keychain vault");
         int version = envelope.has("version") ? envelope.get("version").getAsInt() : -1;
-        if (version != VERSION) throw new IOException("Unsupported vault version " + version + " (made by a newer Keychain?)");
+        if (version > VERSION) throw new NewerVersionException("This vault was saved by a newer Keychain (format " + version + "). Update Keychain to open it.");
+        if (version != VERSION) throw new IOException("Unsupported vault version " + version);
         byte[] plain;
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");

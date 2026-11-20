@@ -46,17 +46,23 @@ public final class MicrosoftSignInScreen extends KeychainScreen {
     @Override
     protected void init() {
         panelWidth = Math.min(340, width - 24);
-        panelHeight = 150;
-        panelX = (width - panelWidth) / 2;
-        panelY = Math.max(44, (height - panelHeight) / 2 - 14);
         if (!started) {
             started = true;
             start();
         }
         int inner = panelWidth - 24;
+        // The panel fits what this phase shows, so there is no empty band above the buttons.
+        panelHeight = switch (phase) {
+            case WAITING -> 84 + lines(Component.translatable("keychain.signin.browser.hint"), inner, 4) * Gfx.LINE_HEIGHT;
+            case WORKING -> 100;
+            case FAILED -> 46 + lines(Messages.reason(failure.reason()), inner, 5) * Gfx.LINE_HEIGHT
+                + lines(Component.literal(failureDetail()), inner, 3) * Gfx.LINE_HEIGHT;
+        };
+        panelX = (width - panelWidth) / 2;
+        panelY = Math.max(44, (height - 28 - panelHeight) / 2);
         int half = (inner - 4) / 2;
         if (phase == Phase.WAITING) {
-            int buttonsY = panelY + panelHeight - 28;
+            int buttonsY = panelY + panelHeight - 30;
             addRenderableWidget(Button.builder(Component.translatable("keychain.signin.open_again"), b -> openBrowser())
                 .bounds(panelX + 12, buttonsY, half, 20).build()).active = browserUrl != null;
             addRenderableWidget(Button.builder(Component.translatable("keychain.signin.copy_link"), b -> copy(browserUrl, "keychain.toast.copied_link"))
@@ -192,9 +198,9 @@ public final class MicrosoftSignInScreen extends KeychainScreen {
     protected void drawForeground(Gfx gfx, int mouseX, int mouseY, float delta) {
         int center = width / 2;
         int titleWidth = font.width(title) + 12;
-        Palette.microsoftLogo(gfx, center - titleWidth / 2, 15, 8);
-        gfx.text(font, title, center - titleWidth / 2 + 12, 15, Palette.TEXT);
-        gfx.centered(font, Component.translatable("keychain.signin.subtitle"), center, 29, Palette.MUTED);
+        Palette.microsoftLogo(gfx, center - titleWidth / 2, Palette.TITLE_Y, 8);
+        gfx.text(font, title, center - titleWidth / 2 + 12, Palette.TITLE_Y, Palette.TEXT);
+        gfx.centered(font, Component.translatable("keychain.signin.subtitle"), center, Palette.SUBTITLE_Y, Palette.MUTED);
 
         int inner = panelWidth - 24;
         int y = panelY + 12;
@@ -203,18 +209,27 @@ public final class MicrosoftSignInScreen extends KeychainScreen {
                 gfx.centered(font, Component.translatable("keychain.signin.failed"), center, y, Palette.BAD);
                 y += 16;
                 y += gfx.wrapped(font, Messages.reason(failure.reason()), center, y, inner, Palette.TEXT, 5) + 6;
-                gfx.wrapped(font, Component.literal(failure.getMessage() == null ? "" : failure.getMessage()), center, y, inner, Palette.FAINT, 3);
+                gfx.wrapped(font, Component.literal(failureDetail()), center, y, inner, Palette.FAINT, 3);
             }
             case WAITING -> {
                 gfx.centered(font, Component.translatable(browserUrl == null ? "keychain.signin.preparing" : "keychain.signin.browser"), center, y, Palette.TEXT);
                 gfx.wrapped(font, Component.translatable("keychain.signin.browser.hint"), center, y + 16, inner, Palette.MUTED, 4);
-                drawSpinner(gfx, center, y + 66);
+                int hintLines = lines(Component.translatable("keychain.signin.browser.hint"), inner, 4);
+                drawSpinner(gfx, center, y + 16 + hintLines * Gfx.LINE_HEIGHT + 10);
             }
             case WORKING -> {
                 gfx.centered(font, Component.translatable("keychain.signin.working"), center, y, Palette.TEXT);
                 drawSteps(gfx, center, y + 22);
             }
         }
+    }
+
+    private String failureDetail() {
+        return failure == null || failure.getMessage() == null ? "" : failure.getMessage();
+    }
+
+    private int lines(Component text, int width, int max) {
+        return Math.max(1, Math.min(max, font.split(text, width).size()));
     }
 
     private void drawSteps(Gfx gfx, int center, int y) {

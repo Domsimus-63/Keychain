@@ -217,8 +217,9 @@ public final class SessionManager {
                 // Renewed tokens are worth keeping even if this switch was overtaken by another one.
                 Keychain.LOGGER.warn("Keychain could not save the renewed session of {}", prepared.name());
             }
-            if (!latest || (failure == null && !stillSaved)) {
-                // Overtaken by a newer switch, or removed while it was being checked: do not bring it back.
+            if (!latest || !stillSaved) {
+                // Overtaken by a newer switch, or removed while it was being checked: do not bring it
+                // back, and do not report a problem with an account the player no longer has.
                 result.complete(Outcome.CANCELLED);
                 return;
             }

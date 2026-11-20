@@ -13,6 +13,7 @@ import io.github.domsimus.keychain.core.vault.VaultData;
 import io.github.domsimus.keychain.session.SessionManager;
 import io.github.domsimus.keychain.session.SkinCache;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -33,6 +34,9 @@ import net.minecraft.network.chat.Component;
 /** The main Keychain screen: the account list, a preview of the selected account, and actions. */
 public final class AccountsScreen extends KeychainScreen {
     private static final int GAP = 4;
+    /** The two button rows under the list: a little smaller than vanilla's 20 x 200 buttons. */
+    private static final int BUTTON_HEIGHT = 18;
+    private static final int BUTTON_MAX_WIDTH = 116;
     private static final long UNDO_MILLIS = 10_000;
     private static final boolean MAC = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
@@ -51,7 +55,7 @@ public final class AccountsScreen extends KeychainScreen {
 
     private AccountList list;
     private EditBox search;
-    private Button filterButton, sortButton, useButton, favoriteButton, removeButton, upButton, downButton, copyButton, resetButton, undoButton, launcherButton;
+    private Button filterButton, sortButton, useButton, favoriteButton, removeButton, copyButton, resetButton, undoButton, launcherButton;
     private PlayerSkinWidget preview;
     private int contentX, contentWidth, listWidth, listTop, listBottom, sideX, sideWidth;
 
@@ -79,13 +83,14 @@ public final class AccountsScreen extends KeychainScreen {
         sideWidth = wide ? Math.max(120, Math.min(200, contentWidth * 3 / 10)) : 0;
         listWidth = contentWidth - (wide ? sideWidth + 6 : 0);
         sideX = contentX + listWidth + 6;
-        int footerY = height - 26;
-        int actionsY = footerY - 24;
-        int toolbarY = 33;
-        listTop = 68;
+        int footerY = height - Palette.BOTTOM_MARGIN - BUTTON_HEIGHT;
+        int actionsY = footerY - BUTTON_HEIGHT - GAP;
+        int toolbarY = 36;
+        listTop = 74;
         listBottom = actionsY - 6;
 
-        int cycleWidth = Math.min(96, (listWidth - GAP * 2) / 4);
+        // Wide enough for the longest label in the current language, but never crowding out the search box.
+        int cycleWidth = Math.min(Math.max(widestCycleLabel() + 12, 70), (listWidth - GAP * 2) * 3 / 10);
         int searchWidth = listWidth - 2 * (cycleWidth + GAP);
         search = addRenderableWidget(new EditBox(font, contentX, toolbarY, searchWidth, 20, Component.translatable("keychain.search")));
         search.setHint(Component.translatable("keychain.search.hint"));
@@ -116,32 +121,21 @@ public final class AccountsScreen extends KeychainScreen {
         Component undo = Component.translatable("keychain.action.undo");
         int undoWidth = font.width(undo) + 14;
         undoButton = addRenderableWidget(Button.builder(undo, b -> undoRemove())
-            .bounds(contentX + listWidth - undoWidth, listTop - 14, undoWidth, 12).build());
+            .bounds(contentX + listWidth - undoWidth, listTop - 16, undoWidth, 14).build());
         undoButton.visible = undoAvailable();
 
         if (wide) {
-            int arrow = 20;
-            int each = (contentWidth - 2 * arrow - 5 * GAP) / 4;
-            int x = contentX;
-            useButton = addRenderableWidget(Button.builder(Component.translatable("keychain.action.use"), b -> useSelected())
-                .bounds(x, actionsY, each, 20).build());
-            x += each + GAP;
-            favoriteButton = addRenderableWidget(Button.builder(Component.translatable("keychain.action.favorite"), b -> favoriteSelected())
-                .bounds(x, actionsY, each, 20).build());
-            x += each + GAP;
-            upButton = addRenderableWidget(Button.builder(Component.literal("▲"), b -> moveSelected(-1))
-                .bounds(x, actionsY, arrow, 20).tooltip(Tooltip.create(Component.translatable("keychain.action.move_up"))).build());
-            x += arrow + GAP;
-            downButton = addRenderableWidget(Button.builder(Component.literal("▼"), b -> moveSelected(1))
-                .bounds(x, actionsY, arrow, 20).tooltip(Tooltip.create(Component.translatable("keychain.action.move_down"))).build());
-            x += arrow + GAP;
-            copyButton = addRenderableWidget(Button.builder(Component.translatable("keychain.action.copy_uuid"), b -> copySelectedUuid())
-                .bounds(x, actionsY, each, 20).build());
-            x += each + GAP;
-            removeButton = addRenderableWidget(Button.builder(Component.translatable("keychain.action.remove"), b -> removeSelected())
-                .bounds(x, actionsY, contentX + contentWidth - x, 20).build());
-            int previewTop = listTop + 30;
-            int previewHeight = listBottom - 30 - previewTop;
+            List<Button> actions = buttonRow(actionsY,
+                Button.builder(Component.translatable("keychain.action.use"), b -> useSelected()),
+                Button.builder(Component.translatable("keychain.action.favorite"), b -> favoriteSelected()),
+                Button.builder(Component.translatable("keychain.action.copy_uuid"), b -> copySelectedUuid()),
+                Button.builder(Component.translatable("keychain.action.remove"), b -> removeSelected()));
+            useButton = actions.get(0);
+            favoriteButton = actions.get(1);
+            copyButton = actions.get(2);
+            removeButton = actions.get(3);
+            int previewTop = listTop + 32;
+            int previewHeight = listBottom - 32 - previewTop;
             preview = null;
             if (previewHeight >= 40) {
                 preview = new PlayerSkinWidget(sideWidth - 8, previewHeight, minecraft.getEntityModels(), () -> {
@@ -152,26 +146,24 @@ public final class AccountsScreen extends KeychainScreen {
                 addRenderableWidget(preview);
             }
         } else {
-            int third = (contentWidth - 2 * GAP) / 3;
-            useButton = addRenderableWidget(Button.builder(Component.translatable("keychain.action.use"), b -> useSelected())
-                .bounds(contentX, actionsY, third, 20).build());
-            favoriteButton = addRenderableWidget(Button.builder(Component.translatable("keychain.action.favorite"), b -> favoriteSelected())
-                .bounds(contentX + third + GAP, actionsY, third, 20).build());
-            removeButton = addRenderableWidget(Button.builder(Component.translatable("keychain.action.remove"), b -> removeSelected())
-                .bounds(contentX + 2 * (third + GAP), actionsY, contentWidth - 2 * (third + GAP), 20).build());
-            upButton = downButton = copyButton = null;
+            List<Button> actions = buttonRow(actionsY,
+                Button.builder(Component.translatable("keychain.action.use"), b -> useSelected()),
+                Button.builder(Component.translatable("keychain.action.favorite"), b -> favoriteSelected()),
+                Button.builder(Component.translatable("keychain.action.remove"), b -> removeSelected()));
+            useButton = actions.get(0);
+            favoriteButton = actions.get(1);
+            removeButton = actions.get(2);
+            copyButton = null;
             preview = null;
         }
 
-        int quarter = (contentWidth - 3 * GAP) / 4;
-        addRenderableWidget(Button.builder(Component.translatable("keychain.action.add_microsoft"), b -> Compat.setScreen(new MicrosoftSignInScreen(this)))
-            .bounds(contentX, footerY, quarter, 20).build()).active = vaultReady();
-        addRenderableWidget(Button.builder(Component.translatable("keychain.action.add_offline"), b -> Compat.setScreen(new OfflineAccountScreen(this)))
-            .bounds(contentX + quarter + GAP, footerY, quarter, 20).build()).active = vaultReady();
-        addRenderableWidget(Button.builder(Component.translatable("keychain.action.settings"), b -> Compat.setScreen(new SettingsScreen(this)))
-            .bounds(contentX + 2 * (quarter + GAP), footerY, quarter, 20).build());
-        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, b -> onClose())
-            .bounds(contentX + 3 * (quarter + GAP), footerY, contentWidth - 3 * (quarter + GAP), 20).build());
+        List<Button> footer = buttonRow(footerY,
+            Button.builder(Component.translatable("keychain.action.add_microsoft"), b -> Compat.setScreen(new MicrosoftSignInScreen(this))),
+            Button.builder(Component.translatable("keychain.action.add_offline"), b -> Compat.setScreen(new OfflineAccountScreen(this))),
+            Button.builder(Component.translatable("keychain.action.settings"), b -> Compat.setScreen(new SettingsScreen(this))),
+            Button.builder(CommonComponents.GUI_DONE, b -> onClose()));
+        footer.get(0).active = vaultReady();
+        footer.get(1).active = vaultReady();
 
         resetButton = null;
         if (!vaultReady()) {
@@ -179,20 +171,35 @@ public final class AccountsScreen extends KeychainScreen {
                 .bounds(contentX + listWidth / 2 - 80, listTop + (listBottom - listTop) / 2 + 22, 160, 20).build());
         }
 
-        // Added last so keyboard focus still starts at the search box. It sits on the left: the top
-        // right corner is where the "Now playing as" toast appears right after a switch.
+        // Added last so keyboard focus still starts at the search box. It sits in the header line, right
+        // after "Playing as ...", and follows that text when it changes (see header()).
         launcherButton = null;
         keychain.sessions().launcher().ifPresent(launcher -> {
             Component label = Component.translatable("keychain.action.launcher", launcher.getName());
             int buttonWidth = Math.min(font.width(label) + 12, contentWidth / 2);
             launcherButton = addRenderableWidget(Button.builder(label, b -> useLauncher())
-                .bounds(contentX, 16, buttonWidth, 14)
+                .bounds(contentX, Palette.SUBTITLE_Y - 3, buttonWidth, 14)
                 .tooltip(Tooltip.create(Component.translatable("keychain.action.launcher.tooltip"))).build());
         });
+
+        if (launcherButton != null) launcherButton.setX(header().x() + 12 + font.width(header().text()) + 8);
 
         rebuildList();
         if (scroll >= 0) list.setScrollAmount(scroll);
         else list.centerOnSelected();
+    }
+
+    /** Lays out equal buttons in one centered row under the content area. */
+    private List<Button> buttonRow(int y, Button.Builder... builders) {
+        int count = builders.length;
+        int each = Math.min(BUTTON_MAX_WIDTH, (contentWidth - (count - 1) * GAP) / count);
+        int x = contentX + (contentWidth - count * each - (count - 1) * GAP) / 2;
+        List<Button> row = new ArrayList<>();
+        for (Button.Builder builder : builders) {
+            row.add(addRenderableWidget(builder.bounds(x, y, each, BUTTON_HEIGHT).build()));
+            x += each + GAP;
+        }
+        return row;
     }
 
     // ---- state -------------------------------------------------------------------------------
@@ -241,8 +248,6 @@ public final class AccountsScreen extends KeychainScreen {
         }
         if (removeButton != null) removeButton.active = has;
         if (copyButton != null) copyButton.active = has;
-        if (upButton != null) upButton.active = has && neighbor(account, -1) != null;
-        if (downButton != null) downButton.active = has && neighbor(account, 1) != null;
         if (undoButton != null) undoButton.visible = undoAvailable();
         if (preview != null) preview.visible = has;
     }
@@ -382,6 +387,18 @@ public final class AccountsScreen extends KeychainScreen {
         rebuildWidgets();
     }
 
+    /** Width of the longest "Show: ..." or "Sort: ..." label, so no option ever has to scroll. */
+    private int widestCycleLabel() {
+        int widest = 0;
+        for (AccountQuery.Filter filter : AccountQuery.Filter.values()) {
+            widest = Math.max(widest, font.width(Component.translatable("keychain.filter", Component.translatable("keychain.filter." + filter.name().toLowerCase(Locale.ROOT)))));
+        }
+        for (AccountQuery.Sort sort : AccountQuery.Sort.values()) {
+            widest = Math.max(widest, font.width(Component.translatable("keychain.sort", Component.translatable("keychain.sort." + sort.name().toLowerCase(Locale.ROOT)))));
+        }
+        return widest;
+    }
+
     private Component filterLabel() {
         return Component.translatable("keychain.filter", Component.translatable("keychain.filter." + query.filter().name().toLowerCase(Locale.ROOT)));
     }
@@ -473,12 +490,13 @@ public final class AccountsScreen extends KeychainScreen {
 
     @Override
     protected void drawBackdrop(Gfx gfx, int mouseX, int mouseY, float delta) {
+        // The same frame as the list next to it, edge to edge.
         if (sideWidth > 0) Palette.panel(gfx, sideX, listTop, sideWidth, listBottom - listTop);
     }
 
     @Override
     protected void drawForeground(Gfx gfx, int mouseX, int mouseY, float delta) {
-        gfx.centered(font, title, width / 2, 8, Palette.TEXT);
+        gfx.centered(font, title, width / 2, Palette.TITLE_Y, Palette.TEXT);
         drawCurrentAccount(gfx);
 
         int listCenter = contentX + listWidth / 2;
@@ -499,39 +517,56 @@ public final class AccountsScreen extends KeychainScreen {
 
         if (undoAvailable()) {
             Component gone = Component.translatable("keychain.removed", removed.name());
-            gfx.text(font, Component.literal(font.plainSubstrByWidth(gone.getString(), listWidth - undoButton.getWidth() - 10)), contentX + 2, listTop - 11, Palette.MUTED);
-        } else if (keychain.migrationProblem() != null) {
-            gfx.centered(font, Component.translatable("keychain.migration_failed"), width / 2, listTop - 11, Palette.WARN);
-        } else {
+            gfx.text(font, Component.literal(font.plainSubstrByWidth(gone.getString(), listWidth - undoButton.getWidth() - 10)), contentX + 2, listTop - 13, Palette.MUTED);
+        } else if (!vault.accounts().isEmpty()) {
             Component count = Component.translatable("keychain.count", list.children().size(), vault.accounts().size());
-            gfx.text(font, count, contentX + 2, listTop - 11, Palette.FAINT);
+            gfx.text(font, count, contentX + 2, listTop - 13, Palette.MUTED);
+            int used = font.width(count);
+            // A small warning when accounts have to be signed in again, so it is seen before a switch fails.
+            Instant now = Instant.now();
+            long signedOut = vault.accounts().stream().filter(account -> account.status(now) == Account.Status.NEEDS_SIGN_IN).count();
+            if (signedOut > 0) {
+                Component warning = Component.translatable("keychain.count.signed_out", signedOut);
+                int x = contentX + 2 + used + 8;
+                Palette.warningBadge(gfx, x, listTop - 14);
+                gfx.text(font, warning, x + 12, listTop - 13, Palette.WARN);
+                used += 20 + font.width(warning);
+                if (mouseX >= x && mouseX < x + 12 + font.width(warning) && mouseY >= listTop - 15 && mouseY < listTop - 3) {
+                    gfx.tooltip(font, Component.translatable("keychain.warning.signed_out.tooltip"), mouseX, mouseY);
+                }
+            }
             Component hint = Component.translatable("keychain.hint", MAC ? "Cmd" : "Ctrl");
-            if (font.width(count) + font.width(hint) + 24 < listWidth) {
-                gfx.text(font, hint, contentX + listWidth - font.width(hint) - 2, listTop - 11, Palette.FAINT);
+            if (used + font.width(hint) + 24 < listWidth) {
+                gfx.text(font, hint, contentX + listWidth - font.width(hint) - 2, listTop - 13, Palette.FAINT);
             }
         }
 
         if (sideWidth > 0) drawSidePanel(gfx);
     }
 
-    private void drawCurrentAccount(Gfx gfx) {
-        SessionManager sessions = keychain.sessions();
+    /** The "Playing as ..." line under the title, centered together with the launcher button after it. */
+    private record Header(String text, boolean waiting, int x) {}
+
+    private Header header() {
         User user = minecraft.getUser();
-        String next = sessions.queuedName().orElse(null);
-        boolean waiting = next != null;
-        Component line = waiting ? Component.translatable("keychain.header.queued", user.getName(), next)
+        String next = keychain.sessions().queuedName().orElse(null);
+        // While a switch waits, say only who is next: that is what matters then, and the short line
+        // leaves room for the toast that appears in the top right corner at the same moment.
+        Component line = next != null ? Component.translatable("keychain.header.queued.short", next)
             : Component.translatable("keychain.header.playing_as", user.getName());
-        // Centered, unless the launcher button on the left needs the room.
-        int left = launcherButton != null ? launcherButton.getX() + launcherButton.getWidth() + 6 : contentX;
-        int right = contentX + contentWidth;
-        int room = Math.max(20, right - left - 12);
-        // Too long for the row: say only who is next, which is what matters while a switch waits.
-        if (waiting && font.width(line) > room) line = Component.translatable("keychain.header.queued.short", next);
+        int buttonSpace = launcherButton != null ? launcherButton.getWidth() + 8 : 0;
+        int room = Math.max(20, contentWidth - buttonSpace - 12);
         String text = font.plainSubstrByWidth(line.getString(), room);
-        int lineWidth = font.width(text) + 12;
-        int x = Math.max(left, Math.min(width / 2 - lineWidth / 2, right - lineWidth));
-        gfx.face(SkinCache.forProfile(user.getProfileId()), x, 20, 8);
-        gfx.text(font, text, x + 12, 20, waiting ? Palette.WARN : Palette.MUTED);
+        int group = 12 + font.width(text) + buttonSpace;
+        return new Header(text, next != null, contentX + (contentWidth - group) / 2);
+    }
+
+    private void drawCurrentAccount(Gfx gfx) {
+        Header header = header();
+        int y = Palette.SUBTITLE_Y;
+        gfx.face(SkinCache.forProfile(minecraft.getUser().getProfileId()), header.x(), y, 8);
+        gfx.text(font, header.text(), header.x() + 12, y, header.waiting() ? Palette.WARN : Palette.MUTED);
+        if (launcherButton != null) launcherButton.setX(header.x() + 12 + font.width(header.text()) + 8);
     }
 
     private void drawSidePanel(Gfx gfx) {
@@ -539,18 +574,20 @@ public final class AccountsScreen extends KeychainScreen {
         int center = sideX + sideWidth / 2;
         int inner = sideWidth - 16;
         if (account == null) {
-            gfx.centered(font, Component.translatable("keychain.preview.none"), center, listTop + (listBottom - listTop) / 2 - 30, Palette.FAINT);
+            // With nothing in the list there is nothing to select; the list itself explains what to do.
+            if (list.children().isEmpty()) return;
+            gfx.centered(font, Component.translatable("keychain.preview.none"), center, listTop + (listBottom - listTop) / 2 - 4, Palette.FAINT);
             return;
         }
-        gfx.centered(font, Component.literal(font.plainSubstrByWidth(account.name(), inner)), center, listTop + 6, Palette.TEXT);
+        gfx.centered(font, Component.literal(font.plainSubstrByWidth(account.name(), inner)), center, listTop + 8, Palette.TEXT);
         Component kind = Messages.kind(account);
         int kindWidth = font.width(kind) + (account.isMicrosoft() ? 11 : 0);
         int kindX = center - kindWidth / 2;
         if (account.isMicrosoft()) {
-            Palette.microsoftLogo(gfx, kindX, listTop + 18, 7);
+            Palette.microsoftLogo(gfx, kindX, listTop + 21, 7);
             kindX += 11;
         }
-        gfx.text(font, kind, kindX, listTop + 17, Palette.MUTED);
+        gfx.text(font, kind, kindX, listTop + 20, Palette.MUTED);
 
         boolean active = keychain.sessions().isActive(account);
         boolean busy = keychain.sessions().preparing().map(account.id()::equals).orElse(false);
@@ -561,14 +598,15 @@ public final class AccountsScreen extends KeychainScreen {
             statusLine = Component.translatable("keychain.preview.with_time", statusLine, Messages.remaining(account.session().expiresAt()));
         }
         int statusColor = busy ? Palette.MUTED : active ? Palette.GOOD : Messages.statusColor(status);
-        int y = listBottom - 25;
+        int y = listBottom - 26;
         int statusWidth = font.width(statusLine) + 8;
         Palette.dot(gfx, center - statusWidth / 2, y + 2, statusColor);
         gfx.text(font, statusLine, center - statusWidth / 2 + 8, y, statusColor);
-        Component used = Component.translatable("keychain.preview.last_used", Messages.lastUsed(account.lastUsed()));
-        gfx.centered(font, Component.literal(font.plainSubstrByWidth(used.getString(), inner)), center, y + 12, Palette.FAINT);
+        Component used = account.lastUsed() == null ? Component.translatable("keychain.preview.never_used")
+            : Component.translatable("keychain.preview.last_used", Messages.lastUsed(account.lastUsed()));
+        gfx.centered(font, Component.literal(font.plainSubstrByWidth(used.getString(), inner)), center, y + 12, Palette.MUTED);
         if (preview != null && account.isMicrosoft() && SkinCache.state(account) == SkinCache.State.LOADING) {
-            gfx.centered(font, Component.translatable("keychain.preview.loading"), center, listTop + 40, Palette.FAINT);
+            gfx.centered(font, Component.translatable("keychain.preview.loading"), center, listTop + 44, Palette.FAINT);
         }
     }
 }

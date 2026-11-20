@@ -6,8 +6,13 @@ import io.github.domsimus.keychain.compat.Compat;
 import io.github.domsimus.keychain.core.account.Account;
 import io.github.domsimus.keychain.core.account.MicrosoftSession;
 import io.github.domsimus.keychain.core.vault.AccountVault;
+import io.github.domsimus.keychain.core.vault.BackupCodec;
+import io.github.domsimus.keychain.core.vault.VaultData;
 import io.github.domsimus.keychain.session.SessionManager;
 import io.github.domsimus.keychain.ui.AccountsScreen;
+import io.github.domsimus.keychain.ui.BackupScreen;
+import io.github.domsimus.keychain.ui.KeychainLanguage;
+import io.github.domsimus.keychain.ui.LanguageScreen;
 import io.github.domsimus.keychain.ui.MicrosoftSignInScreen;
 import io.github.domsimus.keychain.ui.OfflineAccountScreen;
 import io.github.domsimus.keychain.ui.SettingsScreen;
@@ -32,6 +37,8 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
         context.waitForScreen(TitleScreen.class);
+        // The title screen fades its buttons in; wait for that before the screenshot.
+        context.waitTicks(40);
         context.takeScreenshot("keychain-01-title");
 
         context.clickScreenButton("keychain.title");
@@ -219,7 +226,104 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
         context.clickScreenButton("keychain.action.settings");
         context.waitForScreen(SettingsScreen.class);
         context.takeScreenshot("keychain-07-settings");
+
+        // Backup: type a password twice with the keyboard and press Enter.
+        context.clickScreenButton("keychain.settings.backup");
+        context.waitForScreen(BackupScreen.class);
+        context.getInput().typeChars("test-password-1");
+        context.getInput().pressKey(InputConstants.KEY_TAB);
+        context.getInput().typeChars("test-password-1");
+        context.waitTicks(2);
+        context.takeScreenshot("keychain-07b-backup");
+        int backupsBefore = backupFiles(context).size();
+        context.getInput().pressKey(InputConstants.KEY_RETURN);
+        context.waitFor(minecraft -> backupFiles(minecraft).size() > backupsBefore, 600);
+        context.waitTicks(2);
+        context.takeScreenshot("keychain-07c-backup-created");
+        context.runOnClient(minecraft -> {
+            java.nio.file.Path newest = backupFiles(minecraft).getFirst();
+            try {
+                VaultData backup = BackupCodec.decode(java.nio.file.Files.readString(newest), "test-password-1".toCharArray());
+                check(backup.accounts().size() == Keychain.get().vault().accounts().size(), "the backup holds every account");
+            } catch (java.io.IOException failure) {
+                throw new AssertionError("Keychain game test failed: backup unreadable", failure);
+            }
+            // Remove an account, so restoring has something to bring back.
+            check(Keychain.get().vault().remove(UUID.fromString("7c9e1f3a-2b4d-4c6e-9f01-3a5c7e9b1d2f")), "removed PixelPaladin");
+        });
+
+        // Restore: the newest backup is selected; enter its password and click Restore.
+        context.clickScreenButton("keychain.backup.tab.restore");
+        context.waitTicks(2);
+        context.runOnClient(minecraft -> {
+            for (Object child : Compat.currentScreen().children()) {
+                if (child instanceof net.minecraft.client.gui.components.EditBox box) box.setValue("wrong-password");
+            }
+        });
+        context.clickScreenButton("keychain.backup.restore");
+        context.waitTicks(40);
+        check(context.computeOnClient(minecraft -> Keychain.get().vault().find(UUID.fromString("7c9e1f3a-2b4d-4c6e-9f01-3a5c7e9b1d2f")).isEmpty()),
+            "a wrong password restores nothing");
+        context.takeScreenshot("keychain-07d-wrong-password");
+        context.runOnClient(minecraft -> {
+            for (Object child : Compat.currentScreen().children()) {
+                if (child instanceof net.minecraft.client.gui.components.EditBox box) box.setValue("test-password-1");
+            }
+        });
+        context.clickScreenButton("keychain.backup.restore");
+        context.waitFor(minecraft -> Keychain.get().vault().find(UUID.fromString("7c9e1f3a-2b4d-4c6e-9f01-3a5c7e9b1d2f")).isPresent(), 600);
+        context.waitTicks(2);
+        context.takeScreenshot("keychain-07e-restored");
         context.clickScreenButton("gui.done");
+        context.waitForScreen(SettingsScreen.class);
+
+        // Language: Keychain's own screens switch language, the rest of the game does not.
+        String gameDone = context.computeOnClient(minecraft -> net.minecraft.network.chat.Component.translatable("gui.done").getString());
+        context.runOnClient(minecraft -> Compat.setScreen(new LanguageScreen(Compat.currentScreen())));
+        context.waitForScreen(LanguageScreen.class);
+        double[] german = context.computeOnClient(minecraft -> {
+            for (Object child : Compat.currentScreen().children()) {
+                if (!(child instanceof net.minecraft.client.gui.components.ObjectSelectionList<?> list)) continue;
+                for (Object item : list.children()) {
+                    net.minecraft.client.gui.components.ObjectSelectionList.Entry<?> row = (net.minecraft.client.gui.components.ObjectSelectionList.Entry<?>) item;
+                    if (!row.getNarration().getString().contains("Deutsch")) continue;
+                    double scale = (double) minecraft.getWindow().getWidth() / minecraft.getWindow().getGuiScaledWidth();
+                    return new double[] {(row.getContentX() + 30) * scale, row.getContentYMiddle() * scale};
+                }
+            }
+            throw new AssertionError("Keychain game test failed: no Deutsch row");
+        });
+        context.getInput().setCursorPos(german[0], german[1]);
+        context.waitTick();
+        context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+        context.waitTicks(3);
+        context.takeScreenshot("keychain-07f-language");
+        context.runOnClient(minecraft -> {
+            check(Keychain.get().settings().language.equals("de_de"), "language saved, got " + Keychain.get().settings().language);
+            check(net.minecraft.network.chat.Component.translatable("keychain.settings.language").getString().equals("Sprache"), "Keychain is in German");
+            check(net.minecraft.network.chat.Component.translatable("gui.done").getString().equals(gameDone), "the game keeps its language");
+        });
+        // A resource reload replaces the game's language table; the choice must survive it.
+        AtomicReference<CompletableFuture<Void>> reload = new AtomicReference<>();
+        context.runOnClient(minecraft -> reload.set(minecraft.reloadResourcePacks()));
+        context.waitFor(minecraft -> reload.get().isDone(), 1200);
+        // The loading screen fades out for about a second after the reload itself is done.
+        context.waitTicks(60);
+        context.runOnClient(minecraft -> check(net.minecraft.network.chat.Component.translatable("keychain.settings.language").getString().equals("Sprache"),
+            "the language choice survives a resource reload"));
+        // A quick look at a language in another script, then back to following the game.
+        context.runOnClient(minecraft -> {
+            KeychainLanguage.select("ja_jp");
+            Compat.setScreen(new AccountsScreen(null));
+        });
+        context.waitTicks(5);
+        context.takeScreenshot("keychain-07g-japanese");
+        context.runOnClient(minecraft -> {
+            Keychain.get().settings().language = "";
+            Keychain.get().settings().save();
+            KeychainLanguage.select("");
+            check(net.minecraft.network.chat.Component.translatable("keychain.settings.language").getString().equals("Language"), "back to the game's language");
+        });
         context.waitForScreen(AccountsScreen.class);
 
         // Browser sign-in: the local sign-in page starts and the Microsoft link is ready to open or
@@ -304,6 +408,22 @@ public final class KeychainClientGameTest implements FabricClientGameTest {
             }
             throw new AssertionError("Keychain game test failed: no row for " + name);
         });
+    }
+
+    private static java.util.List<java.nio.file.Path> backupFiles(ClientGameTestContext context) {
+        return context.computeOnClient(KeychainClientGameTest::backupFiles);
+    }
+
+    /** Backups in the backups folder, newest first. */
+    private static java.util.List<java.nio.file.Path> backupFiles(net.minecraft.client.Minecraft minecraft) {
+        java.nio.file.Path folder = Keychain.get().paths().backups();
+        if (!java.nio.file.Files.isDirectory(folder)) return java.util.List.of();
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(folder)) {
+            return files.filter(file -> file.getFileName().toString().endsWith(BackupCodec.EXTENSION))
+                .sorted(java.util.Comparator.comparing((java.nio.file.Path file) -> file.getFileName().toString()).reversed()).toList();
+        } catch (java.io.IOException failure) {
+            throw new AssertionError(failure);
+        }
     }
 
     /** Narration of the selected account row ("Name, kind account, status. ..."), or "" if none is selected. */

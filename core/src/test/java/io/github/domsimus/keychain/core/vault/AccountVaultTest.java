@@ -198,4 +198,57 @@ class AccountVaultTest {
         vault.upsert(Account.offline("Steve"));
         assertEquals(1, calls[0]);
     }
+
+    @Test
+    void everySaveKeepsThePreviousStateAsBackup() throws Exception {
+        AccountVault vault = vault();
+        vault.upsert(Account.offline("Steve"));
+        String afterFirst = Files.readString(vault.file());
+        vault.upsert(Account.offline("Alex"));
+
+        assertEquals(afterFirst, Files.readString(vault.backupFile()));
+        assertFalse(Files.readString(vault.backupFile()).contains("Steve"), "the backup is encrypted too");
+    }
+
+    @Test
+    void aDamagedVaultIsRebuiltFromItsBackup() throws Exception {
+        AccountVault vault = vault();
+        vault.upsert(Account.offline("Steve"));
+        vault.upsert(Account.offline("Alex"));
+        // A crash or a bad sync tool cut the file off.
+        String content = Files.readString(vault.file());
+        Files.writeString(vault.file(), content.substring(0, content.length() / 2));
+
+        AccountVault reopened = vault();
+        assertEquals(AccountVault.State.READY, reopened.state());
+        assertEquals(List.of("Steve"), reopened.accounts().stream().map(Account::name).toList());
+        assertTrue(reopened.takeRestoredNotice());
+        assertFalse(reopened.takeRestoredNotice(), "the notice is shown once");
+        try (var files = Files.list(dir)) {
+            assertTrue(files.anyMatch(file -> file.getFileName().toString().startsWith("accounts.vault.damaged-")), "the damaged file is kept");
+        }
+        assertTrue(reopened.upsert(Account.offline("Alex")));
+        assertEquals(2, vault().accounts().size());
+    }
+
+    @Test
+    void aVaultFromANewerVersionIsNotReplacedByItsBackup() throws Exception {
+        AccountVault vault = vault();
+        vault.upsert(Account.offline("Steve"));
+        vault.upsert(Account.offline("Alex"));
+        String newer = "{\"format\":\"keychain-vault\",\"version\":99}";
+        Files.writeString(vault.file(), newer);
+
+        AccountVault reopened = vault();
+        assertEquals(AccountVault.State.UNREADABLE, reopened.state());
+        assertEquals(newer, Files.readString(vault.file()));
+    }
+
+    @Test
+    void aVaultWithoutBackupStaysUnreadable() throws Exception {
+        Files.writeString(dir.resolve("accounts.vault"), "garbage");
+        AccountVault vault = vault();
+        assertEquals(AccountVault.State.UNREADABLE, vault.state());
+        assertFalse(vault.takeRestoredNotice());
+    }
 }

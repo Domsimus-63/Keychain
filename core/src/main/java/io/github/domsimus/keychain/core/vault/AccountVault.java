@@ -1,16 +1,15 @@
 package io.github.domsimus.keychain.core.vault;
 
+import io.github.domsimus.keychain.core.SafeFiles;
 import io.github.domsimus.keychain.core.account.Account;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
@@ -30,6 +29,10 @@ import org.slf4j.LoggerFactory;
  * moved into place, and the in-memory state only changes once that succeeded. A vault that cannot be
  * read is never overwritten. Each change re-reads the file first and holds a lock file while it
  * works, so two game instances sharing one vault never undo each other's edits.
+ *
+ * <p>Every save is decrypted again before it replaces the file, is forced to disk, and keeps the
+ * previous state as {@code accounts.vault.bak}. If the vault file is ever damaged, it is rebuilt
+ * from that copy automatically.
  */
 public final class AccountVault {
     private static final Logger LOGGER = LoggerFactory.getLogger("Keychain");
@@ -47,6 +50,7 @@ public final class AccountVault {
     private volatile String problem;
     /** Exactly what the file contained when {@link #data} was read from or written to it. */
     private String loadedContent;
+    private volatile boolean restoredFromBackup;
 
     /** Supplies the encryption key lazily, so a damaged key file only affects the vault, not startup. */
     @FunctionalInterface
@@ -156,8 +160,7 @@ public final class AccountVault {
         try (Lock ignored = lock()) {
             read();
             if (state == State.READY) return null;
-            Path backup = file.resolveSibling(file.getFileName() + ".unreadable-"
-                + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(java.time.LocalDateTime.now()));
+            Path backup = file.resolveSibling(file.getFileName() + ".unreadable-" + timestamp());
             if (Files.exists(file)) Files.move(file, backup);
             loadedContent = null;
             set(VaultData.EMPTY, State.READY, null);
@@ -181,6 +184,7 @@ public final class AccountVault {
     }
 
     private void read() {
+        SecretKey key = null;
         try {
             if (!Files.exists(file)) {
                 loadedContent = null;
@@ -188,15 +192,60 @@ public final class AccountVault {
                 return;
             }
             String content = Files.readString(file, StandardCharsets.UTF_8);
-            VaultData read = VaultCodec.decode(content, keys.get());
+            key = keys.get();
+            VaultData read = VaultCodec.decode(content, key);
             loadedContent = content;
             set(read, State.READY, null);
         } catch (IOException | RuntimeException failure) {
+            // A damaged file (cut off by a crash, a bad disk, a sync tool) can be replaced by the
+            // last good copy. A missing key or a file from a newer Keychain cannot: the copy would
+            // fail the same way, or roll back newer data.
+            if (key != null && !(failure instanceof VaultCodec.NewerVersionException) && restoreBackup(key)) return;
             LOGGER.error("Keychain could not read {}; it will not be overwritten", file, failure);
             loadedContent = null;
             String reason = failure.getMessage();
             set(VaultData.EMPTY, State.UNREADABLE, reason == null || reason.isBlank() ? failure.getClass().getSimpleName() : reason);
         }
+    }
+
+    /** The previous good state of the vault, kept by every save. */
+    public Path backupFile() {
+        return file.resolveSibling(file.getFileName() + ".bak");
+    }
+
+    /**
+     * True once after the vault was rebuilt from its automatic backup because the file itself was
+     * damaged, so the UI can say that the most recent changes may be missing.
+     */
+    public boolean takeRestoredNotice() {
+        boolean notice = restoredFromBackup;
+        restoredFromBackup = false;
+        return notice;
+    }
+
+    private boolean restoreBackup(SecretKey key) {
+        Path backup = backupFile();
+        try {
+            if (!Files.exists(backup)) return false;
+            String content = Files.readString(backup, StandardCharsets.UTF_8);
+            VaultData restored = VaultCodec.decode(content, key);
+            // Keep a copy of the damaged file for inspection, then replace it in one step: if anything
+            // fails on the way, the vault file is still where it was.
+            Files.copy(file, file.resolveSibling(file.getFileName() + ".damaged-" + timestamp()));
+            SafeFiles.writeAtomically(file, content);
+            loadedContent = content;
+            restoredFromBackup = true;
+            LOGGER.warn("Keychain restored {} from its automatic backup because the file was damaged", file);
+            set(restored, State.READY, null);
+            return true;
+        } catch (IOException | RuntimeException failure) {
+            LOGGER.warn("Keychain could not restore {} from {}", file, backup, failure);
+            return false;
+        }
+    }
+
+    private static String timestamp() {
+        return DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(java.time.LocalDateTime.now());
     }
 
     /**
@@ -216,19 +265,20 @@ public final class AccountVault {
     }
 
     private void write(VaultData next) throws IOException {
-        String encoded = VaultCodec.encode(next, keys.get());
-        Files.createDirectories(file.getParent());
-        Path temporary = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
-        try {
-            Files.writeString(temporary, encoded, StandardCharsets.UTF_8);
+        SecretKey key = keys.get();
+        String encoded = VaultCodec.encode(next, key);
+        // Never save something that cannot be read back: decrypt the new file before it replaces the old one.
+        if (!VaultCodec.decode(encoded, key).equals(next)) throw new IOException("The vault did not read back correctly; nothing was saved");
+        // Keep the state being replaced as the automatic backup. Only a state that was read or
+        // written successfully qualifies, so a damaged file never overwrites a good backup.
+        if (loadedContent != null) {
             try {
-                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException unsupported) {
-                Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+                SafeFiles.writeAtomically(backupFile(), loadedContent);
+            } catch (IOException failure) {
+                LOGGER.warn("Keychain could not update the backup copy of {}", file, failure);
             }
-        } finally {
-            Files.deleteIfExists(temporary);
         }
+        SafeFiles.writeAtomically(file, encoded);
         loadedContent = encoded;
     }
 

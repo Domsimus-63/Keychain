@@ -108,6 +108,33 @@ public record VaultData(List<Account> accounts, UUID lastActive) {
         return new VaultData(accounts, id);
     }
 
+    /** What restoring a backup changed. */
+    public record ImportResult(VaultData data, int added, int renewed, int unchanged) {}
+
+    /**
+     * Restores accounts from a backup without losing anything saved here: accounts that are
+     * missing are added at the end, and a saved Microsoft account that has to be signed in again
+     * takes over the backup's sign-in if that one still works. Everything else stays as it is.
+     */
+    public ImportResult importFrom(VaultData backup, Instant now) {
+        VaultData merged = this;
+        int added = 0, renewed = 0, unchanged = 0;
+        for (Account incoming : backup.accounts) {
+            Account saved = merged.find(incoming.id()).orElse(null);
+            if (saved == null) {
+                merged = merged.upsert(incoming);
+                added++;
+            } else if (saved.isMicrosoft() && incoming.isMicrosoft() && incoming.session() != null
+                && saved.status(now) == Account.Status.NEEDS_SIGN_IN && incoming.status(now) != Account.Status.NEEDS_SIGN_IN) {
+                merged = merged.replace(saved.id(), account -> account.withSession(incoming.session()));
+                renewed++;
+            } else {
+                unchanged++;
+            }
+        }
+        return new ImportResult(merged, added, renewed, unchanged);
+    }
+
     /** Adds every account from {@code other} that this vault does not have yet. */
     public VaultData mergeMissing(VaultData other) {
         VaultData merged = this;

@@ -21,6 +21,7 @@ import net.minecraft.network.chat.Component;
  */
 final class AccountList extends KeychainList<AccountList.Row> {
     static final int ROW_HEIGHT = 36;
+    private static final int USE_HEIGHT = 16;
     private final AccountsScreen owner;
 
     AccountList(AccountsScreen owner, Minecraft minecraft, int width, int height, int top) {
@@ -70,11 +71,6 @@ final class AccountList extends KeychainList<AccountList.Row> {
         if (owner != null) owner.onSelectionChanged(row == null ? null : row.account);
     }
 
-    @Override
-    public int getRowWidth() {
-        return Math.max(80, width - 16);
-    }
-
     final class Row extends KeychainList.Row<Row> {
         final Account account;
         private int starX = Integer.MIN_VALUE, starY, useX = Integer.MIN_VALUE, useY, useWidth;
@@ -108,7 +104,15 @@ final class AccountList extends KeychainList<AccountList.Row> {
             }
 
             int faceSize = Math.min(24, h - 6);
-            gfx.face(SkinCache.get(account), x + 5, y + (h - faceSize) / 2, faceSize);
+            int faceY = y + (h - faceSize) / 2;
+            gfx.face(SkinCache.get(account), x + 5, faceY, faceSize);
+            // Signed out (or very likely to be): a small badge on the head, explained on hover.
+            Component warning = refreshing ? null : Messages.warning(account, Instant.now());
+            if (warning != null) {
+                int badgeX = x + 5 + faceSize - 7, badgeY = faceY + faceSize - 7;
+                Palette.warningBadge(gfx, badgeX, badgeY);
+                if (inside(mouseX, mouseY, badgeX - 1, badgeY - 1, 12, 12)) gfx.tooltip(font, warning, mouseX, mouseY);
+            }
 
             // Right side: favorite star, and a "Use" button while hovering.
             int right = x + w - 4;
@@ -120,13 +124,10 @@ final class AccountList extends KeychainList<AccountList.Row> {
             useX = Integer.MIN_VALUE;
             if (hovered && !active && !refreshing) {
                 Component use = Component.translatable("keychain.row.use");
-                useWidth = font.width(use) + 12;
+                useWidth = Math.max(40, font.width(use) + 16);
                 useX = right - useWidth;
-                useY = y + (h - 14) / 2;
-                boolean overUse = inside(mouseX, mouseY, useX, useY, useWidth, 14);
-                gfx.fill(useX, useY, useX + useWidth, useY + 14, overUse ? 0xFF4C8A3F : 0xFF3A3A3A);
-                gfx.outline(useX, useY, useWidth, 14, overUse ? 0xFF8CE07A : 0xFF6A6A6A);
-                gfx.centered(font, use, useX + useWidth / 2, useY + 3, Palette.TEXT);
+                useY = y + (h - USE_HEIGHT) / 2;
+                Palette.button(gfx, font, use, useX, useY, useWidth, USE_HEIGHT, inside(mouseX, mouseY, useX, useY, useWidth, USE_HEIGHT));
                 right = useX - 6;
             }
 
@@ -144,6 +145,7 @@ final class AccountList extends KeychainList<AccountList.Row> {
                 gfx.text(font, badge, badgeX + 8, nameY, color);
             }
 
+            // Second line: the kind of account in gray, then its status, colored only when it needs attention.
             int infoX = textX;
             int infoY = y + h / 2 + 2;
             if (account.isMicrosoft()) {
@@ -151,10 +153,16 @@ final class AccountList extends KeychainList<AccountList.Row> {
                 infoX += 10;
             }
             Account.Status status = account.status(Instant.now());
-            String info = Messages.kind(account).getString() + "  ·  "
-                + (refreshing ? Component.translatable("keychain.status.connecting").getString() : Messages.status(status).getString());
-            int infoColor = refreshing ? Palette.MUTED : status == Account.Status.NEEDS_SIGN_IN ? Palette.WARN : Palette.MUTED;
-            gfx.text(font, font.plainSubstrByWidth(info, Math.max(10, right - infoX)), infoX, infoY, infoColor);
+            String kind = Messages.kind(account).getString() + "  ·  ";
+            String state = refreshing ? Component.translatable("keychain.status.connecting").getString() : Messages.status(status).getString();
+            int stateColor = !refreshing && status == Account.Status.NEEDS_SIGN_IN ? Palette.WARN : Palette.MUTED;
+            int room = Math.max(10, right - infoX);
+            if (font.width(kind) + font.width(state) <= room) {
+                gfx.text(font, kind, infoX, infoY, Palette.MUTED);
+                gfx.text(font, state, infoX + font.width(kind), infoY, stateColor);
+            } else {
+                gfx.text(font, font.plainSubstrByWidth(kind + state, room), infoX, infoY, stateColor);
+            }
         }
 
         @Override
@@ -165,7 +173,7 @@ final class AccountList extends KeychainList<AccountList.Row> {
             setSelected(this);
             if (inside(mx, my, starX - 2, starY - 2, 15, 15)) {
                 owner.toggleFavorite(account);
-            } else if (useX != Integer.MIN_VALUE && inside(mx, my, useX, useY, useWidth, 14)) {
+            } else if (useX != Integer.MIN_VALUE && inside(mx, my, useX, useY, useWidth, USE_HEIGHT)) {
                 owner.use(account);
             } else if (doubleClick) {
                 owner.use(account);

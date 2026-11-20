@@ -35,7 +35,7 @@ public final class SettingsScreen extends KeychainScreen {
         columnWidth = Math.min(310, width - 24);
         columnX = (width - columnWidth) / 2;
         int half = (columnWidth - 4) / 2;
-        int y = 34;
+        int y = 30;
 
         toggle(columnX, y, half, "keychain.settings.title_button", () -> settings.titleScreenButton, value -> settings.titleScreenButton = value);
         toggle(columnX + half + 4, y, columnWidth - half - 4, "keychain.settings.pause_button", () -> settings.pauseMenuButton, value -> settings.pauseMenuButton = value);
@@ -50,6 +50,12 @@ public final class SettingsScreen extends KeychainScreen {
                 SessionManager.toast(Component.translatable("keychain.settings.shared.failed"), null);
             }
         }).bounds(columnX, y, columnWidth, 20).tooltip(Tooltip.create(Component.translatable("keychain.settings.shared.tooltip"))).build());
+        y += 24;
+        // Each opens its own screen, so the settings stay short.
+        addRenderableWidget(Button.builder(languageLabel(), b -> Compat.setScreen(new LanguageScreen(this)))
+            .bounds(columnX, y, half, 20).tooltip(Tooltip.create(Component.translatable("keychain.settings.language.tooltip"))).build());
+        addRenderableWidget(Button.builder(Component.translatable("keychain.settings.backup"), b -> Compat.setScreen(new BackupScreen(this)))
+            .bounds(columnX + half + 4, y, columnWidth - half - 4, 20).tooltip(Tooltip.create(Component.translatable("keychain.settings.backup.tooltip"))).build());
         y += 34;
         clientIdY = y;
         clientId = addRenderableWidget(new EditBox(font, columnX, y + 12, columnWidth - 64, 20, Component.translatable("keychain.settings.client_id")));
@@ -89,6 +95,13 @@ public final class SettingsScreen extends KeychainScreen {
         return CommonComponents.optionNameValue(Component.translatable(key), value ? CommonComponents.OPTION_ON : CommonComponents.OPTION_OFF);
     }
 
+    private static Component languageLabel() {
+        Component value = KeychainLanguage.option(KeychainLanguage.selected())
+            .<Component>map(option -> Component.literal(option.nativeName()))
+            .orElse(Component.translatable("keychain.language.game.short"));
+        return CommonComponents.optionNameValue(Component.translatable("keychain.settings.language"), value);
+    }
+
     private Component sharedLabel() {
         return onOff("keychain.settings.shared", keychain.settings().sharedVault);
     }
@@ -110,7 +123,7 @@ public final class SettingsScreen extends KeychainScreen {
 
     @Override
     protected void drawForeground(Gfx gfx, int mouseX, int mouseY, float delta) {
-        gfx.centered(font, title, width / 2, 15, Palette.TEXT);
+        gfx.centered(font, title, width / 2, Palette.TITLE_Y, Palette.TEXT);
         gfx.text(font, Component.translatable("keychain.settings.client_id"), columnX, clientIdY, Palette.TEXT);
         String value = clientIdValue.strip();
         Component status;

@@ -1,14 +1,18 @@
 package io.github.domsimus.keychain.core.vault;
 
+import io.github.domsimus.keychain.core.SafeFiles;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -41,10 +45,15 @@ public final class VaultKey {
             ? DPAPI + Base64.getEncoder().encodeToString(Dpapi.protect(raw))
             : PLAIN + Base64.getEncoder().encodeToString(raw);
         Files.createDirectories(file.getParent());
+        SafeFiles.restrictToOwner(file.getParent());
+        Arrays.fill(raw, (byte) 0);
         Path temporary = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
         try {
-            Files.writeString(temporary, encoded, StandardCharsets.US_ASCII);
-            restrictToOwner(temporary);
+            SafeFiles.restrictToOwner(temporary);
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) {
+                channel.write(ByteBuffer.wrap(encoded.getBytes(StandardCharsets.US_ASCII)));
+                channel.force(true);
+            }
             publish(temporary, file);
         } finally {
             Files.deleteIfExists(temporary);
@@ -65,7 +74,7 @@ public final class VaultKey {
         }
         try {
             Files.copy(temporary, file);
-            restrictToOwner(file);
+            SafeFiles.restrictToOwner(file);
         } catch (FileAlreadyExistsException anotherGameWon) {
             // Keep the existing key.
         }
@@ -97,15 +106,10 @@ public final class VaultKey {
             throw new IOException("The vault key file is damaged", malformed);
         }
         if (raw.length != KEY_BYTES) throw new IOException("The vault key has the wrong length");
-        return new SecretKeySpec(raw, "AES");
-    }
-
-    private static void restrictToOwner(Path file) {
-        try {
-            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
-        } catch (UnsupportedOperationException | IOException notPosix) {
-            // Windows: the key is protected by DPAPI and the per-user AppData ACL instead.
-        }
+        SecretKey key = new SecretKeySpec(raw, "AES");
+        // The key object keeps its own copy; do not leave another one lying around in memory.
+        Arrays.fill(raw, (byte) 0);
+        return key;
     }
 
     /** Windows DPAPI through JNA, looked up reflectively so the core has no hard JNA dependency. */

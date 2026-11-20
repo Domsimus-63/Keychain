@@ -32,17 +32,22 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
   queued in-world switch can be cancelled with *Stay here*.
 - **Find accounts fast.** Search (Ctrl+F, arrow keys to pick a result, Enter to switch), filter
   (All / Microsoft / Offline / Favorites), sort (Custom / Name / Recent), favorites pinned to the
-  top, your own order with ▲▼ or Alt+Up/Down.
+  top, your own order with Alt+Up/Down. Accounts that have to be signed in again get a small
+  warning, so you see it before a switch fails.
 - **Skin previews.** Heads in the list and a draggable 3D model of the selected account.
 - **Remember account.** Optionally start the game as the account you used last.
 - **Share accounts between instances.** Optionally use one account list for every instance on your PC.
 - **Stronger storage.** The vault is AES-256-GCM encrypted with a random key that lives outside your
   Minecraft folder, sealed with Windows DPAPI on Windows. Sharing or uploading an instance or modpack
   never shares your tokens.
-- **Upgrades itself.** Accounts from Keychain 1.x–3.x are imported automatically on first start.
+- **Password-protected backups.** Save every account to one file locked with your own password, and
+  restore it on any computer. Restoring adds missing accounts and renews signed-out ones; nothing is
+  removed.
 - **Open it your way.** Key button on the title screen, pause menu and server list, an optional
   *Open Keychain* key (Controls → Keychain), and a *Configure* button in Mod Menu.
-- **English, German and Turkish**, with every text ready for more translations.
+- **11 languages**: English, German, Spanish, French, Italian, Polish, Portuguese (Brazil), Russian,
+  Turkish, Chinese (Simplified) and Japanese. Keychain follows the game's language, or pick one for
+  Keychain alone in Settings → Language.
 
 ## Screenshots
 
@@ -63,11 +68,11 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
 
 | Minecraft | Jar | Java |
 | --- | --- | --- |
-| 1.21.11 | `keychain-4.1.0+mc1.21.11.jar` | 21+ |
-| 26.1, 26.1.1, 26.1.2 | `keychain-4.1.0+mc26.1.jar` | 25+ |
-| 26.2 | `keychain-4.1.0+mc26.2.jar` | 25+ |
-| 26.3 | `keychain-4.1.0+mc26.3.jar` | 25+ |
-| any of the above | `keychain-4.1.0-universal.jar` | |
+| 1.21.11 | `keychain-4.2.0+mc1.21.11.jar` | 21+ |
+| 26.1, 26.1.1, 26.1.2 | `keychain-4.2.0+mc26.1.jar` | 25+ |
+| 26.2 | `keychain-4.2.0+mc26.2.jar` | 25+ |
+| 26.3 | `keychain-4.2.0+mc26.3.jar` | 25+ |
+| any of the above | `keychain-4.2.0-universal.jar` | |
 
 ## Where your data lives
 
@@ -75,10 +80,16 @@ Fabric · Minecraft **1.21.11, 26.1 – 26.1.2, 26.2 and 26.3** · requires Fabr
 | --- | --- |
 | Accounts (encrypted) | `config/keychain/accounts.vault`, or the shared vault below |
 | Settings | `config/keychain/settings.json` |
-| Vault key, shared vault | `%APPDATA%\Keychain` (Windows), `~/Library/Application Support/Keychain` (macOS), `~/.local/share/keychain` (Linux) |
+| Vault key, shared vault, backups (`backups/`) | `%APPDATA%\Keychain` (Windows), `~/Library/Application Support/Keychain` (macOS), `~/.local/share/keychain` (Linux) |
 
 The vault can only be opened with the key on the computer (and, on Windows, the Windows user) that
-created it. On a new computer, Keychain shows *Start fresh*, which keeps the old file as a backup.
+created it. To take your accounts to a new computer, create a backup in Settings → *Backup & restore*,
+copy the file into the backups folder on the new computer and restore it there. Without a backup,
+Keychain shows *Start fresh* on a new computer, which keeps the old file aside.
+
+Every save is read back before it replaces the vault, is forced to disk, and keeps the previous state
+as `accounts.vault.bak`. If the vault file is ever damaged (a crash, a full disk, a sync tool),
+Keychain rebuilds it from that copy automatically and keeps the damaged file next to it.
 An `accounts.vault.lock` file next to the vault keeps two running games from saving at the same
 moment; it is empty and safe to delete while no game is running.
 Encryption protects against copied or shared files; it cannot protect against malware running as you.

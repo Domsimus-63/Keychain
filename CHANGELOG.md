@@ -1,5 +1,58 @@
 # Changelog
 
+## 4.2.0
+
+### New
+- **Password-protected backups.** Settings → *Backup & restore* saves every account to one file,
+  locked with a password you choose (AES-256-GCM, key derived with PBKDF2-SHA256, 600,000 rounds).
+  Unlike the vault, a backup opens on any computer, so it is the way to move your accounts. Restoring
+  adds the accounts you do not have yet and renews signed-out ones; nothing is ever removed.
+- **11 languages.** New: Spanish, French, Italian, Polish, Portuguese (Brazil), Russian, Chinese
+  (Simplified) and Japanese, next to English, German and Turkish.
+- **A language just for Keychain.** Settings → *Language* opens a scrolling list. Keychain follows
+  the game's language by default, or uses the one you pick while the rest of the game stays as it is.
+- **Warning on signed-out accounts.** Accounts that have to be signed in again get a small yellow
+  badge on their head, and the list header counts them (*Needs sign-in: 2*). Accounts whose sign-in
+  was last renewed more than 90 days ago get the badge too, since Microsoft has most likely dropped it.
+
+### Safer vault
+- Every save is decrypted again before it replaces the vault, so a save can never write a file that
+  does not open.
+- Saves are forced to disk before they replace the old file, so a power cut cannot leave an empty or
+  half-written vault, key or settings file.
+- The previous state is kept as `accounts.vault.bak`. If the vault file is damaged, Keychain rebuilds
+  it from that copy on its own, keeps the damaged file, and tells you.
+- A vault written by a newer Keychain is never "repaired" with the older copy.
+- On Linux and macOS, the Keychain folder and every file Keychain writes are readable by you only.
+- Key material is wiped from memory once it has been used.
+
+### Changed
+- The bottom buttons are smaller (18 pixels high, at most 116 wide) and centered.
+- The ▲▼ buttons are gone; reorder with Alt+Up/Down in the list.
+- *Show* and *Sort* grow to fit their longest label, so translations no longer scroll inside the button.
+- The account preview says *Never used yet* instead of "Last used never".
+- The language setting reads *Automatic* while Keychain follows the game.
+- **A cleaner account screen that matches the rest of Keychain.** The list and the preview panel
+  share one frame and line up edge to edge; *Back to <name>* sits in the header line next to
+  "Playing as"; the hover *Use* button looks like every other button; only the status turns yellow
+  on a signed-out account, not the whole line; gray text is easier to read on bright backgrounds.
+- Titles, subtitles and bottom buttons sit at the same height on every Keychain screen, and every
+  list (accounts, backups, languages) uses the same framed look.
+- While a switch waits, the header says only who is next, so it no longer runs under the toast.
+
+### Fixed
+- List scrollbars stuck out past the right edge of their list and overlapped the rows.
+- The preview panel did not line up with the account list's top and bottom edges.
+- The account count and *Undo* sat directly on the list's top border; *Undo* was cramped.
+- "Select an account" was drawn above the middle of the empty preview panel.
+- In the backup and language lists, the second line of a row ran into the selection outline.
+- The Microsoft sign-in panel had an empty band above its buttons.
+- A failed check of an account removed during the check still showed an error.
+
+### Removed
+- Importing accounts from Keychain 1.x–3.x. **Upgrading from 3.x?** Start the game once with 4.1.0
+  first, which imports them, then update to 4.2.0.
+
 ## 4.1.0
 
 ### New

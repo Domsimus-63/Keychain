@@ -26,7 +26,9 @@ no restart.
 - Expired sessions refresh automatically
 - Optional: start the game as your last account
 - Optional: share one account list across all your instances
-- Imports accounts from older Keychain versions automatically
+- Password-protected backups to move your accounts to another computer
+- A warning on accounts that have to be signed in again
+- 11 languages, with a separate language setting just for Keychain
 
 ## Versions
 
